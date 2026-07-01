@@ -1,5 +1,28 @@
 # Changelog
 
+## Unreleased — "Professionalization" cycle
+
+### Fixed (audit findings — Step 1 of the professionalization pass)
+- **Critical:** saves from the previous release (pre-morality/pre-rarity)
+  loaded and then hard-crashed the game on the first End Day. New versioned
+  save-migration system (`src/core/save.ts`) with a defensive repair pass;
+  proven end-to-end by forging a legacy save in the browser test.
+- **Data-loss risk (iOS):** saves now mirror to native storage via
+  `@capacitor/preferences` (WKWebView localStorage is OS-evictable).
+- Keep roster paginated — inmates beyond the visible rows were unreachable.
+- Guards can now be dismissed (two-tap confirm); the core action had no UI.
+- End Day re-entrancy guard (double-tap could advance two days).
+- Flaky smoke assert: forced riots now guarantee a populated roster.
+
+### Added
+- **Playability harness** (`test/playability.test.ts`): bot wardens
+  (prudent/cruel/greedy/passive) machine-play up to 200 days across dozens of
+  seeds; asserts no state corruption and a real difficulty curve. Tests 75→87.
+- **Decision documents** grounded in five research passes:
+  `docs/CONTENT_ROADMAP.md` (content gap analysis), `docs/MARKETING_PLAN.md`
+  (go-to-market with budget tiers), `docs/RELEASE_PLAN.md` (2026 store
+  submission playbook), `docs/research/marketing-intelligence.md` (raw findings).
+
 ## Unreleased — "Rarity, Danger & Morality" cycle
 
 Three interlocking systems that give the game its identity.

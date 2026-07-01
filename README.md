@@ -93,6 +93,15 @@ npx cap open android                      # Android Studio (Play/Samsung license
 The road from this slice to the stores — phases, exit criteria, and the
 store-readiness checklist — is in **[docs/ROADMAP.md](docs/ROADMAP.md)**.
 
+Professionalization plans (July 2026):
+- **[docs/CONTENT_ROADMAP.md](docs/CONTENT_ROADMAP.md)** — what's genuinely
+  missing (art, audio, onboarding, endings, wardens, story inmates) and in what
+  order, with explicit non-goals
+- **[docs/MARKETING_PLAN.md](docs/MARKETING_PLAN.md)** — evidence-based go-to-
+  market: organic three-engine strategy, budget tiers, 8-week runbook
+- **[docs/RELEASE_PLAN.md](docs/RELEASE_PLAN.md)** — the verified 2026 App
+  Store + Google Play submission playbook and timeline
+
 ## Contributing
 
 See **[CONTRIBUTING.md](CONTRIBUTING.md)**. The one rule that keeps the project
