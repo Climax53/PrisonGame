@@ -14,6 +14,7 @@
 import { BALANCE } from "./balance";
 import { diseaseChance, escapeChance, fireChance, riotChance } from "./danger";
 import { buildBribeDecision, buildRiotDecision } from "./decisions";
+import { pickStoryDecision } from "./storyDecisions";
 import {
   adjustMorality,
   deathReputationMultiplier,
@@ -72,6 +73,7 @@ export function resolveEvents(state: GameState, rng: Rng): EventResolution {
       ),
     );
     decision = buildRiotDecision(state, potentialDeaths, mitigation);
+    state.stats.riotsFaced += 1;
   }
 
   // ── Fire ───────────────────────────────────────────────────────────────
@@ -115,6 +117,7 @@ export function resolveEvents(state: GameState, rng: Rng): EventResolution {
       // warden's soul and works the warders, same as fire/starvation paths.
       adjustMorality(state, -BALANCE.morality.perNeglectDeath * deaths);
       fatigueGuards(state);
+      state.stats.totalDeaths += deaths;
     }
     const repDelta = -deaths * BALANCE.reputation.perDeath * deathReputationMultiplier(state);
     state.reputation += repDelta;
@@ -151,6 +154,7 @@ export function resolveEvents(state: GameState, rng: Rng): EventResolution {
       });
     } else {
       escapee.alive = false;
+      state.stats.totalEscapes += 1;
       // Losing a notorious inmate is a far greater scandal.
       const repDelta = -BALANCE.reputation.perEscape * escapeMods.repSwingMult;
       state.reputation += repDelta;
@@ -210,6 +214,93 @@ export function resolveEvents(state: GameState, rng: Rng): EventResolution {
       const purse = rng.int(25, 80);
       decision = buildBribeDecision(state, briber, purse);
     }
+  }
+
+  // ── Story decision (only if nothing else claimed the day) ─────────────────
+  if (!decision) {
+    decision = pickStoryDecision(state, rng);
+  }
+
+  // ── Harsh winter ───────────────────────────────────────────────────────────
+  if (state.winterDaysLeft === 0 && rng.chance(E.winter.baseChance)) {
+    state.winterDaysLeft = E.winter.durationDays;
+    events.push({
+      kind: "winter",
+      day: state.day,
+      message: `A killing frost settles over the land — the keep will burn double firewood for ${E.winter.durationDays} days.`,
+      deaths: 0,
+      reputationDelta: 0,
+      coinDelta: 0,
+    });
+  }
+
+  // ── Royal amnesty ──────────────────────────────────────────────────────────
+  {
+    const petty = state.prisoners.filter((p) => p.alive && p.severity === "petty");
+    if (petty.length > 0 && rng.chance(E.amnesty.baseChance)) {
+      for (const p of petty) {
+        p.alive = false; // released by decree
+        state.stats.totalReleased += 1;
+      }
+      events.push({
+        kind: "amnesty",
+        day: state.day,
+        message: `Royal amnesty! A herald reads the decree and ${petty.length} petty offender${petty.length > 1 ? "s walk" : " walks"} free — with their daily pay.`,
+        deaths: 0,
+        reputationDelta: 0,
+        coinDelta: 0,
+      });
+    }
+  }
+
+  // ── The famous bard ────────────────────────────────────────────────────────
+  if (rng.chance(E.bard.baseChance)) {
+    if (avgUnrest < 35 && living > 0) {
+      const gain = rng.int(2, 5);
+      state.reputation += gain;
+      for (const p of state.prisoners) {
+        if (p.alive) p.unrest = Math.max(0, p.unrest - 5);
+      }
+      events.push({
+        kind: "bard",
+        day: state.day,
+        message: `A famous bard tours the keep and composes "The Just Warden." It is annoyingly catchy — and very good for your name.`,
+        deaths: 0,
+        reputationDelta: gain,
+        coinDelta: 0,
+      });
+    } else {
+      const loss = rng.int(2, 5);
+      state.reputation -= loss;
+      events.push({
+        kind: "bard",
+        day: state.day,
+        message: "A famous bard visits, hears the howling cells, and leaves with a ballad you will not enjoy.",
+        deaths: 0,
+        reputationDelta: -loss,
+        coinDelta: 0,
+      });
+    }
+  }
+
+  // ── Rat plague ─────────────────────────────────────────────────────────────
+  if (state.resources.food > 10 && rng.chance(E.ratPlague.baseChance)) {
+    const lost = Math.min(
+      state.resources.food,
+      Math.max(5, Math.round(state.resources.food * rng.range(0.2, 0.4))),
+    );
+    state.resources.food = Math.round((state.resources.food - lost) * 10) / 10;
+    for (const p of state.prisoners) {
+      if (p.alive) p.health = Math.max(1, p.health - 5);
+    }
+    events.push({
+      kind: "ratPlague",
+      day: state.day,
+      message: `Rats in the storehouse! ${lost} food is spoiled and a queasy sickness runs the cells.`,
+      deaths: 0,
+      reputationDelta: 0,
+      coinDelta: 0,
+    });
   }
 
   return { events, decision };

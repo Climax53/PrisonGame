@@ -54,7 +54,7 @@ Full design: **[docs/GAME_DESIGN.md](docs/GAME_DESIGN.md)**.
 |---|---|
 | `npm run dev` | Vite dev server with hot reload |
 | `npm run build` | Type-check + production build to `dist/` |
-| `npm test` | Run the 75-test Vitest suite (core logic) |
+| `npm test` | Run the 117-test Vitest suite (core logic) |
 | `npm run smoke` | Headless-Chromium boot test (needs a preview server running) |
 | `npm run verify` | Build → serve → browser smoke-test, end to end |
 | `npm run check` | **typecheck + tests + verify** — the full gate |

@@ -44,8 +44,13 @@ function assertSane(s: GameState, label: string): void {
   }
 }
 
-/** Play one full run. Returns days survived. */
-function playRun(seed: number, bot: Bot, decisionPick: (s: GameState) => string, maxDays = 200): number {
+/** Play one full run. Returns the day reached and how it ended. */
+function playRun(
+  seed: number,
+  bot: Bot,
+  decisionPick: (s: GameState) => string,
+  maxDays = 200,
+): { day: number; won: boolean; lost: boolean } {
   const s = createInitialState(seed);
   for (let i = 0; i < maxDays && !s.gameOver; i++) {
     bot(s);
@@ -56,7 +61,7 @@ function playRun(seed: number, bot: Bot, decisionPick: (s: GameState) => string,
     }
     assertSane(s, `seed ${seed}`);
   }
-  return s.day;
+  return { day: s.day, won: !!s.gameWon, lost: s.gameOver && !s.gameWon };
 }
 
 // ── Bot personalities ─────────────────────────────────────────────────────────
@@ -106,10 +111,19 @@ const greedyBot: Bot = (s) => {
   }
 };
 
+/** Pick a preferred option when present, else the first option on the card —
+ * story decisions have their own option ids, so pickers must never assume. */
+const pickOption = (s: GameState, preferred: Record<string, string>): string => {
+  const d = s.pendingDecision!;
+  const want = preferred[d.kind];
+  if (want && d.options.some((o) => o.id === want)) return want;
+  return d.options[0].id;
+};
+
 const crushRiots = (s: GameState) =>
-  s.pendingDecision!.kind === "riot" ? "crush" : "extort";
+  pickOption(s, { riot: "crush", bribe: "extort" });
 const talkRiots = (s: GameState) =>
-  s.pendingDecision!.kind === "riot" ? "negotiate" : "refuse";
+  pickOption(s, { riot: "negotiate", bribe: "refuse" });
 
 // ── The suite ────────────────────────────────────────────────────────────────
 
@@ -132,14 +146,24 @@ describe("machine-played full runs never corrupt", () => {
 });
 
 describe("difficulty curve is real", () => {
-  it("a prudent warden usually survives 100+ days", () => {
-    let survived = 0;
+  it("a prudent warden usually thrives (wins the run or reigns 100+ days)", () => {
+    let thrived = 0;
     const runs = 12;
     for (let seed = 1; seed <= runs; seed++) {
-      if (playRun(seed * 3, prudentBot, talkRiots, 100) >= 100) survived++;
+      const r = playRun(seed * 3, prudentBot, talkRiots, 100);
+      if (r.won || r.day >= 100) thrived++;
     }
-    // Sensible play must be viable — most runs reach day 100.
-    expect(survived).toBeGreaterThanOrEqual(Math.ceil(runs * 0.6));
+    // Sensible play must be viable — most runs win or are still reigning at 100.
+    expect(thrived).toBeGreaterThanOrEqual(Math.ceil(runs * 0.6));
+  });
+
+  it("victory is genuinely reachable: prudent play wins within 200 days in most seeds", () => {
+    let victories = 0;
+    const runs = 10;
+    for (let seed = 1; seed <= runs; seed++) {
+      if (playRun(seed * 11, prudentBot, talkRiots, 200).won) victories++;
+    }
+    expect(victories).toBeGreaterThanOrEqual(Math.ceil(runs * 0.5));
   });
 
   it("greedy neglect eventually loses (the game has teeth)", () => {

@@ -17,7 +17,8 @@ import {
   repGainMultiplier,
   unrestDrift,
 } from "./morality";
-import { prisonerRarityMods } from "./rarity";
+import { prisonerRarityMods, rarityRank } from "./rarity";
+import { checkVictory } from "./endings";
 import { Rng } from "./rng";
 import {
   averageBrutality,
@@ -43,6 +44,7 @@ function collectIncome(state: GameState): number {
     .filter((p) => p.alive)
     .reduce((sum, p) => sum + p.dailyPayout, 0);
   state.resources.coin += income;
+  state.stats.totalCoinEarned += income;
   return income;
 }
 
@@ -118,7 +120,9 @@ function consumeFood(state: GameState): void {
 /** Burn firewood for warmth. Shortfall chills the cells. */
 function consumeFirewood(state: GameState): void {
   const living = state.prisoners.filter((p) => p.alive);
-  const need = round1(living.length * BALANCE.upkeep.firewoodPerPrisoner);
+  // A harsh winter doubles the wood the keep must burn.
+  const winterMult = state.winterDaysLeft > 0 ? 2 : 1;
+  const need = round1(living.length * BALANCE.upkeep.firewoodPerPrisoner * winterMult);
   if (state.resources.firewood >= need) {
     state.resources.firewood = round1(state.resources.firewood - need);
     return;
@@ -176,6 +180,7 @@ function brutalityCasualties(state: GameState, rng: Rng): number {
     if (p.unrest > 60 && rng.chance((brutality / 100) * 0.05)) {
       p.alive = false;
       deaths++;
+      state.stats.totalDeaths += 1;
       // Beating inmates to death darkens the warden's soul.
       adjustMorality(state, -MOR.perBrutalDeath);
       pushLog(state, `${p.name} dies under the warders' discipline.`, "bad");
@@ -191,6 +196,7 @@ function resolveHealthDeaths(state: GameState): number {
     if (p.alive && p.health <= 0) {
       p.alive = false;
       deaths++;
+      state.stats.totalDeaths += 1;
       // Letting inmates die of neglect is its own kind of cruelty.
       adjustMorality(state, -MOR.perNeglectDeath);
       pushLog(state, `${p.name} dies in the cells.`, "bad");
@@ -207,6 +213,7 @@ function releaseServed(state: GameState): number {
     if (p.alive && p.sentenceDays <= 0) {
       p.alive = false; // leaves the keep
       released++;
+      state.stats.totalReleased += 1;
       // Freeing a notorious inmate on good terms is a bigger reputation win.
       const swing = prisonerRarityMods(p.rarity).repSwingMult;
       adjustReputation(state, R.perRelease * swing * gainMult);
@@ -291,7 +298,19 @@ export function advanceDay(state: GameState): GameState {
   sweepRoster(state);
   ageRoster(state);
 
+  // Winter thaws one day at a time.
+  if (state.winterDaysLeft > 0) state.winterDaysLeft -= 1;
+
+  // Track reign records for the summary screen.
+  state.stats.peakReputation = Math.max(state.stats.peakReputation, state.reputation);
+  for (const p of state.prisoners) {
+    if (p.alive) {
+      state.stats.bestRarityRank = Math.max(state.stats.bestRarityRank, rarityRank(p.rarity));
+    }
+  }
+
   state.tier = tierForReputation(state.reputation);
+  checkVictory(state);
   generateOffers(state, rng);
 
   state.day += 1;

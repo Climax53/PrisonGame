@@ -6,6 +6,7 @@ export { BALANCE } from "./balance";
 export { Rng, nextRandom } from "./rng";
 export {
   createInitialState,
+  emptyStats,
   pushLog,
   livingPrisoners,
   effectiveGuardSkill,
@@ -20,6 +21,12 @@ export {
   buildBribeDecision,
   type DecisionOutcome,
 } from "./decisions";
+export {
+  pickStoryDecision,
+  resolveStoryDecision,
+  STORY_KINDS,
+} from "./storyDecisions";
+export { endingFor, pickVictoryEnding, checkVictory, type Ending } from "./endings";
 export {
   createPrisoner,
   createGuard,

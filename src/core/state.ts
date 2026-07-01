@@ -3,7 +3,21 @@
 import { BALANCE } from "./balance";
 import { createGuard, createPrisoner, tierForReputation } from "./factory";
 import { Rng } from "./rng";
-import type { GameState, LogEntry, Prisoner } from "./types";
+import type { GameState, LogEntry, Prisoner, RunStats } from "./types";
+
+/** A zeroed statistics block for a fresh run (also used by save repair). */
+export function emptyStats(): RunStats {
+  return {
+    totalDeaths: 0,
+    totalEscapes: 0,
+    totalReleased: 0,
+    totalCoinEarned: 0,
+    riotsFaced: 0,
+    decisionsMade: 0,
+    bestRarityRank: 0,
+    peakReputation: 0,
+  };
+}
 
 /**
  * Build a fresh game from a seed. The seed makes the whole playthrough
@@ -30,6 +44,9 @@ export function createInitialState(seed: number): GameState {
     lastEvents: [],
     rngState: seed | 0,
     gameOver: false,
+    crownDays: 0,
+    winterDaysLeft: 0,
+    stats: emptyStats(),
     idCounter: 0,
   };
 
@@ -74,12 +91,16 @@ export function averageUnrest(state: GameState): number {
  * not in simulation.ts, to avoid an import cycle with decisions.ts.
  */
 export function evaluateGameOver(state: GameState): void {
+  // Once a run has concluded (including victory), its ending is final.
+  if (state.gameOver) return;
   if (state.reputation <= BALANCE.reputation.min) {
     state.gameOver = true;
+    state.endingId = "disgraced";
     state.gameOverReason =
       "Your reputation has collapsed. The magistrate strips you of the keep.";
   } else if (state.resources.coin <= -100) {
     state.gameOver = true;
+    state.endingId = "bankrupt";
     state.gameOverReason = "Bankrupt. Your creditors seize the keep.";
   }
   // A fallen keep has no decisions left to make — don't let a dead modal
@@ -125,5 +146,6 @@ export function killWeakestPrisoners(
   living.sort((a, b) => score.get(b.id)! - score.get(a.id)!);
   const victims = living.slice(0, Math.max(0, Math.min(count, living.length)));
   for (const v of victims) v.alive = false;
+  state.stats.totalDeaths += victims.length;
   return victims;
 }

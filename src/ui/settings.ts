@@ -6,6 +6,8 @@
 export interface Settings {
   reducedMotion: boolean;
   sound: boolean;
+  /** True once the first-run tutorial has been completed or skipped. */
+  hasOnboarded: boolean;
 }
 
 const KEY = "wardens_keep_settings_v1";
@@ -13,6 +15,7 @@ const KEY = "wardens_keep_settings_v1";
 const DEFAULTS: Settings = {
   reducedMotion: prefersReducedMotion(),
   sound: true,
+  hasOnboarded: false,
 };
 
 /** Respect the OS-level "reduce motion" accessibility flag as the default. */

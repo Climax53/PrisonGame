@@ -241,13 +241,40 @@ with ever more valuable prisoners and political figures.
 
 ---
 
-## 8. Loss & Win Conditions
+## 8. Loss & Win Conditions — the run arc
 
-- **Loss — Disgraced:** reputation hits 0 (the magistrate strips your post).
-- **Loss — Bankrupt:** coin falls below −100.
-- **Soft win / endgame:** sustained Crown tier. v1 is an endless "how long can
-  you reign / how high a score" run; a structured campaign with explicit
-  victory chapters is a post-launch goal (see ROADMAP).
+- **Victory:** hold **Crown tier for 30 consecutive days** (a "Xd to glory"
+  countdown badge appears in the HUD at Crown). The victory's *flavor* reflects
+  the reign you actually ran (`src/core/endings.ts`):
+  - **☠ The Iron Warden** — won as a Tyrant (morality ≤ −33)
+  - **🕊 Shepherd of the Lost** — won as a Saint (morality ≥ +33)
+  - **🪙 The Coin-Counter** — won rich (coin ≥ 1500)
+  - **👑 Keeper of the Crown** — the default triumph
+- **Loss — ⚖ Disgraced:** reputation hits 0. **Loss — 📜 Debtor's Walk:** coin
+  below −100. Losses are themed endings too — per design principle the game
+  narrates, never scolds.
+- **The reign summary:** every ending shows "The Reign in Numbers" — days
+  ruled, coin taken in, freed/deaths/escapes, riots faced, hard choices made,
+  rarest inmate held, peak reputation, final moral standing — with a
+  **Save Summary** button that exports the screen as a shareable image (the
+  research's organic-marketing loop). See
+  [docs/img/reign-summary.png](img/reign-summary.png).
+
+### The story deck (`src/core/storyDecisions.ts`)
+
+Eight situational dilemmas join riot/bribe, each eligibility-gated to the
+state of the keep and resolved with the same telegraphed-trade-off rules:
+plague doctor at the gate · a caught ringleader · a noble's family visit · a
+guard caught smuggling · the magistrate's "special treatment" order · a
+starving village at the storehouse · a prisoner duel · an informant selling a
+riot warning. At most one decision fires per day.
+
+### Weather & realm events
+
+Four auto events widen the day-to-day texture: **harsh winter** (firewood need
+doubles for 3 days, ❄ HUD badge), **royal amnesty** (petty prisoners walk
+free), **the famous bard** (reputation swing keyed to how the keep is run), and
+**rat plague** (spoiled stores).
 
 ---
 

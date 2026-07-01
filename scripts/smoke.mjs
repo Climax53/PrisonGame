@@ -26,8 +26,17 @@ page.on("pageerror", (e) => errors.push(String(e)));
 
 // Expose a browser-side helper so page.evaluate/waitForFunction can reach the
 // live scene (free variables aren't captured across the Node↔browser boundary).
+// Mark onboarding as done so the tour doesn't overlay the gameplay assertions
+// (it gets its own dedicated check at the end).
 await page.addInitScript(() => {
   window.scene = () => window.__GAME__.scene.getScene("GameScene");
+  // Loading with ?onboard=1 leaves settings untouched so the tour can appear.
+  if (!location.search.includes("onboard")) {
+    localStorage.setItem(
+      "wardens_keep_settings_v1",
+      JSON.stringify({ hasOnboarded: true, reducedMotion: false, sound: true }),
+    );
+  }
 });
 
 await page.goto(URL, { waitUntil: "networkidle" });
@@ -96,6 +105,14 @@ for (let i = 0; i < 15 && !raisedRiot; i++) {
   raisedRiot = await page.evaluate(
     () => scene().state.pendingDecision?.kind === "riot",
   );
+  if (!raisedRiot) {
+    // A story decision (duel, informant…) may have claimed the day instead —
+    // answer it so the next End Day isn't blocked.
+    await page.evaluate(() => {
+      const d = scene().state.pendingDecision;
+      if (d) scene().resolveDecision(d.options[0].id);
+    });
+  }
 }
 
 let modalRendered = false;
@@ -157,6 +174,42 @@ const migratedPlayable = await page.evaluate(
 );
 
 const finalDay = await page.evaluate(() => scene().state.day);
+
+// ── Victory flow: force the crown clock to the brink, end a day, and require
+// the run to conclude in a themed win with the reign summary on screen.
+await page.evaluate(() => {
+  const s = scene().state;
+  s.reputation = 90;
+  s.crownDays = 29;
+  s.resources.food = 200;
+  s.resources.firewood = 60;
+  s.pendingDecision = undefined;
+  for (const p of s.prisoners) p.unrest = 0;
+});
+await page.evaluate(() => scene().endDay());
+await page.waitForFunction(() => scene().state.gameOver === true, { timeout: 6000 });
+const victory = await page.evaluate(() => ({
+  won: !!scene().state.gameWon,
+  endingId: scene().state.endingId ?? null,
+  statsShown: typeof scene().state.stats?.totalCoinEarned === "number",
+}));
+await page.waitForTimeout(300);
+await page.screenshot({ path: "scripts/screenshot-victory.png" });
+
+// ── Onboarding: wipe storage and load with ?onboard=1 (disables the settings
+// bypass above; a query change forces a real document load) — the tour must appear.
+await page.evaluate(() => localStorage.clear());
+await page.goto(`${URL}?onboard=1`, { waitUntil: "networkidle" });
+await page.waitForFunction(
+  () => window.__GAME__?.scene?.getScene("GameScene")?.state,
+  { timeout: 15000 },
+);
+await page.waitForTimeout(400);
+const onboardingShown = await page.evaluate(() =>
+  scene().children.list.some((c) => c.depth === 850 && c.length > 0),
+);
+await page.screenshot({ path: "scripts/screenshot-onboarding.png" });
+
 await browser.close();
 
 let failed = false;
@@ -181,6 +234,9 @@ assert(
   `legacy v1 save migrated cleanly (day ${migrated.day}, morality ${migrated.morality})`,
 );
 assert(migratedPlayable, "migrated legacy save plays a day without corruption");
-console.log(`screenshots → ${SHOT_PLAY}, ${SHOT_MODAL}`);
+assert(victory.won, `holding crown 30 days wins the run (ending: ${victory.endingId})`);
+assert(victory.statsShown, "reign statistics are tracked for the summary");
+assert(onboardingShown, "first-run onboarding tour appears for a fresh warden");
+console.log(`screenshots → ${SHOT_PLAY}, ${SHOT_MODAL}, victory, onboarding`);
 
 process.exit(failed ? 1 : 0);

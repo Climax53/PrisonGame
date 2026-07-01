@@ -13,16 +13,20 @@ import {
   applyAction,
   applyDecision,
   assessDangers,
+  BALANCE,
   costs,
   createInitialState,
   dangerLevel,
+  endingFor,
   livingPrisoners,
   moralityStanding,
+  RARITY_ORDER,
   summarize,
   type GameState,
   type LaborAssignment,
   type Prisoner,
 } from "../core";
+import { runOnboarding } from "../ui/onboarding";
 import { COLORS, DANGER_COLOR, FONT, VIEW } from "../ui/theme";
 import { makeBar, makeButton, makePanel } from "../ui/widgets";
 import { loadGameAsync, saveGame } from "../ui/save";
@@ -96,6 +100,10 @@ export class GameScene extends Phaser.Scene {
     this.state = saved ?? createInitialState(this.makeSeed());
     this.displayed = { coin: this.state.resources.coin, reputation: this.state.reputation };
     this.renderAll();
+    // First-ever run: give the new warden the five-step tour (skippable).
+    if (!saved && !getSettings().hasOnboarded) {
+      runOnboarding(this, () => this.renderAll());
+    }
   }
 
   /** A non-deterministic seed for new games (RNG itself stays seeded/pure). */
@@ -144,6 +152,24 @@ export class GameScene extends Phaser.Scene {
       })
       .setOrigin(1, 0);
     this.hud.add([title, tierLabel]);
+
+    // Active-condition badges: harsh winter, victory countdown at crown tier.
+    const badges: string[] = [];
+    if (s.winterDaysLeft > 0) badges.push(`❄ winter ${s.winterDaysLeft}d`);
+    if (s.tier === "crown" && !s.gameOver) {
+      badges.push(`👑 ${BALANCE.victory.crownDaysRequired - s.crownDays}d to glory`);
+    }
+    if (badges.length > 0) {
+      this.hud.add(
+        this.add
+          .text(VIEW.width - 58, 40, badges.join("   "), {
+            fontFamily: FONT.family,
+            fontSize: "14px",
+            color: COLORS.goldCss,
+          })
+          .setOrigin(1, 0),
+      );
+    }
 
     // Settings gear — toggles reduced motion (accessibility).
     this.hud.add(
@@ -879,48 +905,88 @@ export class GameScene extends Phaser.Scene {
     }
   }
 
+  /** The reign summary — themed ending + shareable statistics card. */
   private renderGameOver(): void {
     const s = this.state;
+    const ending = endingFor(s);
+    const accent = ending.won ? COLORS.goldCss : COLORS.badCss;
+
     this.content.add(
-      this.add.rectangle(0, 0, VIEW.width, VIEW.height, COLORS.shadow, 0.85).setOrigin(0, 0),
+      this.add.rectangle(0, 0, VIEW.width, VIEW.height, COLORS.shadow, 0.92).setOrigin(0, 0),
     );
+
+    let y = 120;
     this.content.add(
       this.add
-        .text(VIEW.width / 2, VIEW.height / 2 - 120, "☠  THE KEEP HAS FALLEN", {
+        .text(VIEW.width / 2, y, ending.title, {
           fontFamily: FONT.family,
-          fontSize: "32px",
-          color: COLORS.badCss,
+          fontSize: "34px",
+          color: accent,
         })
-        .setOrigin(0.5),
+        .setOrigin(0.5, 0),
     );
+    y += 60;
     this.content.add(
       this.add
-        .text(VIEW.width / 2, VIEW.height / 2 - 40, s.gameOverReason ?? "", {
+        .text(VIEW.width / 2, y, ending.text, {
           fontFamily: FONT.family,
-          fontSize: "20px",
+          fontSize: "18px",
           color: COLORS.parchmentCss,
           align: "center",
-          wordWrap: { width: VIEW.width - 80 },
+          wordWrap: { width: VIEW.width - 96 },
+          lineSpacing: 4,
         })
-        .setOrigin(0.5),
+        .setOrigin(0.5, 0),
     );
+    y += 170;
+
+    // The reign in numbers.
+    const st = s.stats;
+    const panel = makePanel(this, 48, y, VIEW.width - 96, 330, "⚜ The Reign in Numbers");
+    const rows: Array<[string, string]> = [
+      ["Days ruled", `${s.day}`],
+      ["Coin taken in", `${Math.round(st.totalCoinEarned)} 🪙`],
+      ["Prisoners freed", `${st.totalReleased}`],
+      ["Deaths in the keep", `${st.totalDeaths}`],
+      ["Escapes", `${st.totalEscapes}`],
+      ["Riots faced", `${st.riotsFaced}`],
+      ["Hard choices made", `${st.decisionsMade}`],
+      ["Rarest inmate held", `${RARITY_ORDER[st.bestRarityRank] ?? "common"}`],
+      ["Peak reputation", `${Math.round(st.peakReputation)}`],
+      ["Final standing", moralityStanding(s.morality)],
+    ];
+    rows.forEach(([label, value], i) => {
+      const ry = 40 + i * 28;
+      panel.add(
+        this.add.text(16, ry, label, {
+          fontFamily: FONT.family, fontSize: "16px", color: COLORS.neutralCss,
+        }),
+      );
+      panel.add(
+        this.add
+          .text(VIEW.width - 96 - 16, ry, value, {
+            fontFamily: FONT.family, fontSize: "16px", color: COLORS.parchmentCss,
+          })
+          .setOrigin(1, 0),
+      );
+    });
+    this.content.add(panel);
+    y += 350;
+
     this.content.add(
-      this.add
-        .text(VIEW.width / 2, VIEW.height / 2 + 30, `You lasted ${s.day} days.`, {
-          fontFamily: FONT.family,
-          fontSize: "20px",
-          color: COLORS.neutralCss,
-        })
-        .setOrigin(0.5),
+      makeButton(this, {
+        x: VIEW.width / 2 - 250, y, width: 240, height: 60,
+        label: "📜 Save Summary",
+        fontSize: 20,
+        fill: COLORS.panelLight,
+        onTap: () => this.saveSummaryImage(),
+      }),
     );
     this.content.add(
       makeButton(this, {
-        x: VIEW.width / 2 - 130,
-        y: VIEW.height / 2 + 90,
-        width: 260,
-        height: 64,
+        x: VIEW.width / 2 + 10, y, width: 240, height: 60,
         label: "Begin Anew",
-        fontSize: 24,
+        fontSize: 22,
         fill: COLORS.gold,
         textColor: COLORS.inkCss,
         onTap: () => {
@@ -933,6 +999,32 @@ export class GameScene extends Phaser.Scene {
         },
       }),
     );
+  }
+
+  /** Snapshot the reign summary to a PNG the player can save/share. */
+  private saveSummaryImage(): void {
+    try {
+      this.game.renderer.snapshot((snap) => {
+        try {
+          const img = snap as HTMLImageElement;
+          const canvas = document.createElement("canvas");
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) return;
+          ctx.drawImage(img, 0, 0);
+          const a = document.createElement("a");
+          a.href = canvas.toDataURL("image/png");
+          a.download = `wardens-keep-day-${this.state.day}.png`;
+          a.click();
+          this.toast("Reign summary saved.", COLORS.goldCss);
+        } catch {
+          this.toast("Could not save the image on this device.", COLORS.badCss);
+        }
+      });
+    } catch {
+      this.toast("Could not save the image on this device.", COLORS.badCss);
+    }
   }
 
   private toast(message: string, color: string = COLORS.parchmentCss): void {

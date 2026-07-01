@@ -15,6 +15,7 @@ import { BALANCE } from "./balance";
 import { adjustMorality, deathReputationMultiplier } from "./morality";
 import type { Rng } from "./rng";
 import { Rng as RngClass } from "./rng";
+import { resolveStoryDecision } from "./storyDecisions";
 import { evaluateGameOver, killWeakestPrisoners, pushLog } from "./state";
 import type { GameEvent, GameState, PendingDecision, Prisoner } from "./types";
 import { clamp } from "./util";
@@ -121,9 +122,13 @@ export function applyDecision(
 
   if (decision.kind === "riot") {
     outcome = resolveRiot(state, rng, optionId, decision);
-  } else {
+  } else if (decision.kind === "bribe") {
     outcome = resolveBribe(state, rng, optionId, decision);
+  } else {
+    const story = resolveStoryDecision(state, rng, optionId, decision);
+    outcome = story ?? { ok: false, error: "Unknown decision." };
   }
+  if (outcome.ok) state.stats.decisionsMade += 1;
 
   // Clear the dead from the roster and persist the RNG cursor.
   state.prisoners = state.prisoners.filter((p) => p.alive);

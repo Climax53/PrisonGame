@@ -9,6 +9,7 @@
 // defaults. A save should load, or return null — never load corrupted.
 // ─────────────────────────────────────────────────────────────────────────────
 
+import { emptyStats } from "./state";
 import { RARITY_ORDER, type GameState, type Rarity } from "./types";
 
 /**
@@ -17,8 +18,9 @@ import { RARITY_ORDER, type GameState, type Rarity } from "./types";
  *
  * v1 — initial release (no morality, no rarity)
  * v2 — adds GameState.morality, Prisoner.rarity, Guard.rarity
+ * v3 — adds run-arc fields: stats, crownDays, winterDaysLeft, gameWon, endingId
  */
-export const SAVE_VERSION = 2;
+export const SAVE_VERSION = 3;
 
 export interface SaveBlob {
   version: number;
@@ -33,6 +35,12 @@ const MIGRATIONS: Record<number, (s: GameState) => void> = {
     for (const p of s.prisoners) p.rarity ??= "common";
     for (const g of s.guards) g.rarity ??= "common";
     for (const o of s.offers ?? []) o.prisoner.rarity ??= "common";
+  },
+  2: (s) => {
+    // v2 → v3: run-arc fields (victory tracking, weather, statistics).
+    s.crownDays ??= 0;
+    s.winterDaysLeft ??= 0;
+    s.stats ??= emptyStats();
   },
 };
 
@@ -60,6 +68,11 @@ function repair(s: GameState): GameState | null {
   for (const o of s.offers ?? []) {
     if (!validRarity(o.prisoner.rarity)) o.prisoner.rarity = "common";
   }
+  if (typeof s.crownDays !== "number" || Number.isNaN(s.crownDays)) s.crownDays = 0;
+  if (typeof s.winterDaysLeft !== "number" || Number.isNaN(s.winterDaysLeft)) {
+    s.winterDaysLeft = 0;
+  }
+  if (typeof s.stats !== "object" || s.stats === null) s.stats = emptyStats();
   return s;
 }
 

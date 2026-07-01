@@ -1,5 +1,36 @@
 # Changelog
 
+## Unreleased — "Run Arc & Story Deck" cycle (Tier 0 content)
+
+### Added
+- **Victory & themed endings** (`src/core/endings.ts`): hold Crown tier 30
+  consecutive days to win (👑 countdown badge in the HUD). The victory's flavor
+  reflects the reign — ☠ Iron Warden (tyrant), 🕊 Shepherd of the Lost (saint),
+  🪙 Coin-Counter (rich), 👑 Keeper of the Crown (default); losses are themed
+  too (⚖ Disgraced, 📜 Debtor's Walk). Machine-play harness proves victory is
+  genuinely reachable by prudent play in most seeds.
+- **The reign summary**: every ending shows "The Reign in Numbers" (days ruled,
+  coin taken in, freed/deaths/escapes, riots faced, hard choices made, rarest
+  inmate held, peak reputation, final standing) with a **Save Summary** button
+  that exports the screen as a PNG — the shareable-run marketing loop.
+- **Story decision deck** (`src/core/storyDecisions.ts`): 8 eligibility-gated
+  dilemma cards — plague doctor, caught ringleader, noble's family visit,
+  smuggling guard, magistrate's "special treatment" order, starving village,
+  prisoner duel, riot informant — each with 3 telegraphed options and
+  morality/coin/reputation couplings. At most one decision per day.
+- **4 new auto events**: harsh winter (double firewood for 3 days, ❄ badge),
+  royal amnesty (frees petty prisoners), the famous bard (reputation swing
+  keyed to the keep's state), rat plague (spoiled stores).
+- **First-run onboarding** (`src/ui/onboarding.ts`): five-step, always-skippable
+  gold-ring tooltip tour; shows exactly once (persisted in settings).
+- **Run statistics** tracked across every death/escape/release/income path.
+
+### Changed
+- Save format v3 (stats/crownDays/winter) with migration from v2 and v1.
+- Browser smoke now proves the victory flow end-to-end (forces the crown clock,
+  wins, renders the summary) and that onboarding appears for a fresh warden.
+  Tests 102 → 117.
+
 ## Unreleased — "Professionalization" cycle
 
 ### Fixed (independent adversarial review — 10 findings, all resolved)

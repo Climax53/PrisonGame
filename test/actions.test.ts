@@ -2,12 +2,23 @@ import { describe, expect, it } from "vitest";
 import { createInitialState } from "../src/core/state";
 import { advanceDay } from "../src/core/simulation";
 import { applyAction, costs } from "../src/core/actions";
+import { applyDecision } from "../src/core/decisions";
 import { BALANCE } from "../src/core/balance";
+import type { GameState } from "../src/core/types";
+
+/** advanceDay may raise a decision (riot/bribe/story) that blocks actions —
+ * answer it with the first option so the tests can proceed. */
+function endDayClean(s: GameState): void {
+  advanceDay(s);
+  while (s.pendingDecision) {
+    applyDecision(s, s.pendingDecision.options[0].id);
+  }
+}
 
 describe("player actions", () => {
   it("accepts an intake offer, adding the prisoner and the bounty", () => {
     const s = createInitialState(1);
-    advanceDay(s); // generates offers
+    endDayClean(s); // generates offers
     s.cellCapacity = 20; // ensure room
     const before = s.prisoners.length;
     const coinBefore = s.resources.coin;
@@ -20,7 +31,7 @@ describe("player actions", () => {
 
   it("refuses an offer when cells are full", () => {
     const s = createInitialState(1);
-    advanceDay(s);
+    endDayClean(s);
     s.cellCapacity = s.prisoners.filter((p) => p.alive).length; // full
     const res = applyAction(s, { type: "acceptOffer", offerIndex: 0 });
     expect(res.ok).toBe(false);

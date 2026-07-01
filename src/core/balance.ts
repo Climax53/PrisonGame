@@ -85,6 +85,17 @@ export const BALANCE = {
     escape: { perUnrestOver40: 0.006, perEmptyGuardSlot: 0.05 },
     inspection: { baseChance: 0.05 },
     bribe: { baseChance: 0.06 },
+    winter: { baseChance: 0.03, durationDays: 3 },
+    amnesty: { baseChance: 0.02 },
+    bard: { baseChance: 0.04 },
+    ratPlague: { baseChance: 0.04 },
+    /** Chance per day that one eligible story decision fires (if no other decision claimed the day). */
+    storyDecision: { baseChance: 0.14 },
+  },
+
+  /** Victory condition: hold Crown tier this many consecutive days. */
+  victory: {
+    crownDaysRequired: 30,
   },
 
   reputation: {

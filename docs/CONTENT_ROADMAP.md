@@ -39,13 +39,13 @@ day-end), UI ticks. Implementation: Phaser audio + a "tap to begin" boot gate
 (iOS requires a gesture anyway — already on the release checklist). Source:
 licensed packs (~$50–100) — commissioning music is not worth it at this stage.
 
-### 3. Onboarding — ~4 days
+### 3. Onboarding — ✅ DONE (five-step skippable tour, shows once)
 Research: opaque onboarding is the genre's #2 most-hated trait; we currently
 explain nothing. Scope: a guided first three days — pinned tooltip sequence
 (HUD → danger strip → offer → labour → End Day), one scripted gentle event, and
 a "Warden's Handbook" reference screen. No unskippable cutscenes.
 
-### 4. A run arc: endings + the reign summary — ~1 week
+### 4. A run arc: endings + the reign summary — ✅ DONE (victory + 4 themed wins + 2 themed losses + exportable summary card)
 The game is currently endless-with-losses; research says endgame emptiness
 kills retention and *multiple endings* drive replay (Reigns/BitLife). Scope:
 - **Victory:** sustain Crown tier 30 days → "Keeper of the Crown" ending
@@ -55,7 +55,7 @@ kills retention and *multiple endings* drive replay (Reigns/BitLife). Scope:
   morality, rarest inmate held — rendered as a save-able image. This doubles as
   the organic-marketing loop (screenshot-able runs) the research calls for.
 
-### 5. Decision & event variety — ~1.5 weeks
+### 5. Decision & event variety — ✅ DONE (8 story cards + 4 auto events shipped)
 Two decision kinds is a proof of concept, not a game. Target for launch:
 **10 decision cards** and **4 new auto events**. Locked list:
 - Decisions: plague doctor's cure offer (coin vs. risk) · escape ringleader

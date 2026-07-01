@@ -107,7 +107,20 @@ export type EventKind =
   | "disease"
   | "escape"
   | "inspection"
-  | "bribe";
+  | "bribe"
+  | "winter" // harsh cold snap — firewood need doubles for a few days
+  | "amnesty" // royal decree frees the petty criminals
+  | "bard" // a famous bard sings of your keep — for better or worse
+  | "ratPlague" // vermin in the stores
+  // Story decisions (pause-and-choose), see storyDecisions.ts:
+  | "plagueDoctor"
+  | "ringleader"
+  | "nobleVisit"
+  | "smuggler"
+  | "magistrateOrder"
+  | "starvingVillage"
+  | "duel"
+  | "informant";
 
 /** A resolved event, recorded for the player log and outcome math. */
 export interface GameEvent {
@@ -134,7 +147,17 @@ export interface LogEntry {
 // legible trade-offs. Effects are deferred to the chosen option and applied by
 // applyDecision(), keeping everything deterministic.
 
-export type DecisionKind = "riot" | "bribe";
+export type DecisionKind =
+  | "riot"
+  | "bribe"
+  | "plagueDoctor"
+  | "ringleader"
+  | "nobleVisit"
+  | "smuggler"
+  | "magistrateOrder"
+  | "starvingVillage"
+  | "duel"
+  | "informant";
 
 /** One selectable response to a pending decision. */
 export interface DecisionOption {
@@ -153,6 +176,20 @@ export interface PendingDecision {
   options: DecisionOption[];
   /** Data needed to resolve the outcome (ids, amounts). Plain values only. */
   context: Record<string, number | string>;
+}
+
+/** Lifetime statistics of the current run, for endings and the reign summary. */
+export interface RunStats {
+  totalDeaths: number;
+  totalEscapes: number;
+  totalReleased: number;
+  /** Coin taken in from all sources (income, bounties, bribes). */
+  totalCoinEarned: number;
+  riotsFaced: number;
+  decisionsMade: number;
+  /** Highest rarity rank ever held in the cells (index into RARITY_ORDER). */
+  bestRarityRank: number;
+  peakReputation: number;
 }
 
 /** The complete serializable game state. Saving = JSON.stringify(state). */
@@ -186,6 +223,16 @@ export interface GameState {
   /** True once a loss condition is reached. */
   gameOver: boolean;
   gameOverReason?: string;
+  /** True when the run ended in victory (gameOver is also set). */
+  gameWon?: boolean;
+  /** Which ending was reached (see endings.ts), set alongside gameOver. */
+  endingId?: string;
+  /** Consecutive days holding Crown tier; 30 wins the run. */
+  crownDays: number;
+  /** Days of harsh winter remaining (firewood need is doubled while > 0). */
+  winterDaysLeft: number;
+  /** Lifetime run statistics for endings and the reign summary. */
+  stats: RunStats;
   /** Monotonic counter used to mint unique ids without Math.random. */
   idCounter: number;
 }
