@@ -1,0 +1,46 @@
+name: Deploy web build to GitHub Pages
+
+# Publishes the production web build to a public URL you can open in your phone
+# browser. This is the fastest way to playtest on a device — no laptop, no
+# Xcode, no Android Studio. Runs on every push to the work branch and main, and
+# can be triggered by hand from the Actions tab.
+
+on:
+  push:
+    branches: ["claude/medieval-jail-game-design-byirr0", "main"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Only one Pages deploy at a time; newer pushes cancel in-flight ones.
+concurrency:
+  group: pages
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npm run build
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - id: deployment
+        uses: actions/deploy-pages@v4
