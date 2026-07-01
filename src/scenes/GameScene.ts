@@ -25,7 +25,7 @@ import {
 } from "../core";
 import { COLORS, DANGER_COLOR, FONT, VIEW } from "../ui/theme";
 import { makeBar, makeButton, makePanel } from "../ui/widgets";
-import { loadGame, saveGame } from "../ui/save";
+import { loadGameAsync, saveGame } from "../ui/save";
 import { Juice } from "../ui/fx";
 import { getSettings, updateSettings } from "../ui/settings";
 
@@ -66,23 +66,34 @@ export class GameScene extends Phaser.Scene {
   /** Screen position of the coin chip, for floating coin deltas. */
   private coinChip = { x: 72, y: 72 };
   private animateReputationFrom: number | null = null;
+  /** Current page of the Keep roster (reset on new game). */
+  private rosterPage = 0;
+  /** Guard id awaiting a second "confirm dismiss" tap, if any. */
+  private confirmDismissId: string | null = null;
+  /** Re-entrancy guard: true while the day-wipe/tick is in flight. */
+  private dayInFlight = false;
 
   constructor() {
     super("GameScene");
   }
 
   create(): void {
-    // Resume a save if one exists; otherwise start fresh with a varied seed.
-    // The seed is taken at the boundary (here, not in the core) so the core
-    // stays deterministic for tests.
-    const saved = loadGame();
-    this.state = saved ?? createInitialState(this.makeSeed());
-
     this.cameras.main.setBackgroundColor(COLORS.bgCss);
     this.hud = this.add.container(0, 0);
     this.content = this.add.container(0, 0);
     this.modalLayer = this.add.container(0, 0).setDepth(800);
     this.juice = new Juice(this);
+    void this.bootstrap();
+  }
+
+  /**
+   * Resume a save if one exists (checking durable native storage on device);
+   * otherwise start fresh with a varied seed. The seed is taken at the boundary
+   * (here, not in the core) so the core stays deterministic for tests.
+   */
+  private async bootstrap(): Promise<void> {
+    const saved = await loadGameAsync();
+    this.state = saved ?? createInitialState(this.makeSeed());
     this.displayed = { coin: this.state.resources.coin, reputation: this.state.reputation };
     this.renderAll();
   }
@@ -280,12 +291,45 @@ export class GameScene extends Phaser.Scene {
 
     const cardH = 86;
     const startY = stripBottom + 28;
-    const maxRows = Math.floor((this.contentBottom - startY - 150) / (cardH + 8));
-    living.slice(0, maxRows).forEach((p, i) => {
+    // Reserve at least 120px for the log; page the roster so every inmate is
+    // always reachable no matter how large the keep grows.
+    const maxRows = Math.max(1, Math.floor((this.contentBottom - startY - 120 - 44) / (cardH + 8)));
+    const pages = Math.max(1, Math.ceil(living.length / maxRows));
+    this.rosterPage = Math.min(this.rosterPage, pages - 1);
+    const pageStart = this.rosterPage * maxRows;
+    const shown = living.slice(pageStart, pageStart + maxRows);
+    shown.forEach((p, i) => {
       this.content.add(this.buildPrisonerCard(p, 16, startY + i * (cardH + 8), VIEW.width - 32, cardH));
     });
 
-    this.buildLogPanel(startY + Math.min(living.length, maxRows) * (cardH + 8) + 6);
+    let cursorY = startY + shown.length * (cardH + 8);
+    if (pages > 1) {
+      // Pager: ‹ Prev | Page X/Y | Next ›
+      this.content.add(
+        makeButton(this, {
+          x: 16, y: cursorY, width: 120, height: 40, label: "‹ Prev", fontSize: 17,
+          enabled: this.rosterPage > 0,
+          onTap: () => { this.rosterPage--; this.renderContent(); },
+        }),
+      );
+      this.content.add(
+        this.add
+          .text(VIEW.width / 2, cursorY + 20, `${pageStart + 1}–${pageStart + shown.length} of ${living.length}`, {
+            fontFamily: FONT.family, fontSize: "16px", color: COLORS.neutralCss,
+          })
+          .setOrigin(0.5, 0.5),
+      );
+      this.content.add(
+        makeButton(this, {
+          x: VIEW.width - 16 - 120, y: cursorY, width: 120, height: 40, label: "Next ›", fontSize: 17,
+          enabled: this.rosterPage < pages - 1,
+          onTap: () => { this.rosterPage++; this.renderContent(); },
+        }),
+      );
+      cursorY += 46;
+    }
+
+    this.buildLogPanel(cursorY + 4);
   }
 
   /** Warden morality (diverging bar) + honest next-day danger forecast. */
@@ -580,17 +624,45 @@ export class GameScene extends Phaser.Scene {
       s.resources.coin >= costs.upgradeCapacity(s),
     );
 
-    // Guard roster summary.
-    const panel = makePanel(this, 16, y + 4, VIEW.width - 32, 120, `Warders (${s.guards.length})`);
-    s.guards.slice(0, 4).forEach((g, i) => {
+    // Guard roster with dismissal (two-tap confirm — destructive action).
+    const shown = s.guards.slice(0, 5);
+    const rosterH = 40 + shown.length * 34 + (s.guards.length > 5 ? 22 : 0);
+    const panel = makePanel(this, 16, y + 4, VIEW.width - 32, Math.max(70, rosterH), `Warders (${s.guards.length})`);
+    shown.forEach((g, i) => {
+      const rowY = 36 + i * 34;
       panel.add(
-        this.add.text(16, 34 + i * 20, `${g.name} — skill ${g.skill}, brutality ${g.brutality}, wage ${g.wage}`, {
+        this.add.text(16, rowY + 7, `${g.name} — skill ${g.skill}, brut ${g.brutality}, wage ${g.wage}`, {
           fontFamily: FONT.family,
           fontSize: "14px",
           color: COLORS.rarity[g.rarity] ?? COLORS.neutralCss,
         }),
       );
+      const confirming = this.confirmDismissId === g.id;
+      panel.add(
+        makeButton(this, {
+          x: VIEW.width - 32 - 118, y: rowY, width: 106, height: 30,
+          label: confirming ? "Dismiss?" : "✕",
+          fontSize: 14,
+          fill: confirming ? COLORS.blood : COLORS.panelLight,
+          onTap: () => {
+            if (confirming) {
+              this.confirmDismissId = null;
+              this.doAction({ type: "fireGuard", guardId: g.id }, "market");
+            } else {
+              this.confirmDismissId = g.id;
+              this.renderContent();
+            }
+          },
+        }),
+      );
     });
+    if (s.guards.length > 5) {
+      panel.add(
+        this.add.text(16, 36 + shown.length * 34, `…and ${s.guards.length - 5} more on the payroll`, {
+          fontFamily: FONT.family, fontSize: "13px", color: COLORS.neutralCss,
+        }),
+      );
+    }
     this.content.add(panel);
   }
 
@@ -630,7 +702,8 @@ export class GameScene extends Phaser.Scene {
   }
 
   private endDay(): void {
-    if (this.state.pendingDecision || this.state.gameOver) return;
+    if (this.state.pendingDecision || this.state.gameOver || this.dayInFlight) return;
+    this.dayInFlight = true;
     const beforeCoin = this.state.resources.coin;
     const beforeRep = this.state.reputation;
     const targetDay = this.state.day + 1;
@@ -641,6 +714,9 @@ export class GameScene extends Phaser.Scene {
       this.animateReputationFrom = beforeRep;
       this.displayed.reputation = this.state.reputation;
       this.renderAll();
+      // The tick has landed — safe to accept the next End Day. The feedback
+      // below is fire-and-forget visuals only.
+      this.dayInFlight = false;
     });
 
     // Reveal the day's consequences once the wipe lifts.
@@ -847,6 +923,8 @@ export class GameScene extends Phaser.Scene {
         onTap: () => {
           this.state = createInitialState(this.makeSeed());
           this.activeTab = "keep";
+          this.rosterPage = 0;
+          this.confirmDismissId = null;
           this.persist();
           this.renderAll();
         },

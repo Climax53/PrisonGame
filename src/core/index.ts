@@ -47,29 +47,9 @@ export {
   type DangerReport,
 } from "./danger";
 
-// ── Save / load ─────────────────────────────────────────────────────────────
-// GameState is plain JSON, so persistence is trivial and version-tagged.
-
-import type { GameState } from "./types";
-
-const SAVE_VERSION = 1;
-
-export interface SaveBlob {
-  version: number;
-  state: GameState;
-}
-
-export function serialize(state: GameState): string {
-  const blob: SaveBlob = { version: SAVE_VERSION, state };
-  return JSON.stringify(blob);
-}
-
-export function deserialize(json: string): GameState | null {
-  try {
-    const blob = JSON.parse(json) as SaveBlob;
-    if (blob.version !== SAVE_VERSION) return null;
-    return blob.state;
-  } catch {
-    return null;
-  }
-}
+export {
+  serialize,
+  deserialize,
+  SAVE_VERSION,
+  type SaveBlob,
+} from "./save";

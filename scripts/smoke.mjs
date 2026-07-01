@@ -32,7 +32,7 @@ await page.addInitScript(() => {
 
 await page.goto(URL, { waitUntil: "networkidle" });
 await page.waitForFunction(
-  () => window.__GAME__?.scene?.getScene("GameScene"),
+  () => window.__GAME__?.scene?.getScene("GameScene")?.state,
   { timeout: 15000 },
 );
 
@@ -77,7 +77,18 @@ for (let i = 0; i < 15 && !raisedRiot; i++) {
     s.resources.firewood = 40;
     s.resources.coin = 800;
     s.guards = [];
-    for (const p of s.prisoners) p.unrest = 100;
+    // The starter inmates' short sentences may have expired by now — an empty
+    // keep can never riot. Conscript pending offers into the cells and pin
+    // long sentences so the roster survives the loop.
+    while (s.prisoners.length < 3 && s.offers.length > 0) {
+      const offer = s.offers.shift();
+      s.prisoners.push(offer.prisoner);
+    }
+    for (const p of s.prisoners) {
+      p.alive = true;
+      p.unrest = 100;
+      p.sentenceDays = 60;
+    }
   });
   const cur = await page.evaluate(() => scene().state.day);
   await page.evaluate(() => scene().endDay());
@@ -105,6 +116,46 @@ if (raisedRiot) {
 // Crushing a riot (options[0]) is a cruel act — morality should have dropped.
 const moralityAfterCrush = await page.evaluate(() => scene().state.morality);
 
+// ── Legacy-save migration: forge a v1 save (pre-morality/pre-rarity), reload,
+// and require the game to boot from it and play a day without corruption. This
+// simulates a player updating the app across the schema change.
+const legacy = await page.evaluate(() => {
+  const raw = localStorage.getItem("wardens_keep_save_v1");
+  const blob = JSON.parse(raw);
+  blob.version = 1;
+  delete blob.state.morality;
+  for (const p of blob.state.prisoners) delete p.rarity;
+  for (const g of blob.state.guards) delete g.rarity;
+  for (const o of blob.state.offers) delete o.prisoner.rarity;
+  blob.state.pendingDecision = undefined;
+  localStorage.setItem("wardens_keep_save_v1", JSON.stringify(blob));
+  return { savedDay: blob.state.day };
+});
+await page.reload({ waitUntil: "networkidle" });
+await page.waitForFunction(
+  () => window.__GAME__?.scene?.getScene("GameScene")?.state,
+  { timeout: 15000 },
+);
+const migrated = await page.evaluate(() => {
+  const s = scene().state;
+  return {
+    day: s.day,
+    morality: s.morality,
+    raritiesOk:
+      s.prisoners.every((p) => typeof p.rarity === "string") &&
+      s.guards.every((g) => typeof g.rarity === "string"),
+  };
+});
+// Play one day on the migrated save — this is what used to crash.
+{
+  const cur = await page.evaluate(() => scene().state.day);
+  await page.evaluate(() => scene().endDay());
+  await page.waitForFunction((c) => scene().state.day > c, cur, { timeout: 6000 });
+}
+const migratedPlayable = await page.evaluate(
+  () => Number.isFinite(scene().state.morality) && Number.isFinite(scene().state.resources.coin),
+);
+
 const finalDay = await page.evaluate(() => scene().state.day);
 await browser.close();
 
@@ -125,6 +176,11 @@ assert(systems.moralityIsNumber, "morality system is live");
 assert(systems.prisonersHaveRarity, "prisoners carry a rarity");
 assert(systems.guardsHaveRarity, "guards carry a rarity");
 assert(moralityAfterCrush < 0, `crushing a riot lowered morality (got ${moralityAfterCrush})`);
+assert(
+  migrated.day === legacy.savedDay && migrated.morality === 0 && migrated.raritiesOk,
+  `legacy v1 save migrated cleanly (day ${migrated.day}, morality ${migrated.morality})`,
+);
+assert(migratedPlayable, "migrated legacy save plays a day without corruption");
 console.log(`screenshots → ${SHOT_PLAY}, ${SHOT_MODAL}`);
 
 process.exit(failed ? 1 : 0);
