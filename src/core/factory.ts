@@ -4,6 +4,7 @@
 
 import { BALANCE } from "./balance";
 import { randomGuardName, randomPrisonerName } from "./names";
+import { guardRarityMods, prisonerRarityMods, rollRarity } from "./rarity";
 import type { Rng } from "./rng";
 import type {
   GameState,
@@ -26,29 +27,36 @@ export function createPrisoner(
   severity: Severity,
 ): Prisoner {
   const [minS, maxS] = BALANCE.sentence[severity];
-  // Reputation scales payout from 80% (rep 0) to 130% (rep 100).
+  const rarity = rollRarity(rng, state.tier);
+  const mods = prisonerRarityMods(rarity);
+  // Reputation scales payout from 80% (rep 0) to 130% (rep 100); rarity then
+  // multiplies it — a rare inmate is worth far more to the crown.
   const repScale = 0.8 + (state.reputation / 100) * 0.5;
   return {
     id: mintId(state, "p"),
     name: randomPrisonerName(rng),
     severity,
+    rarity,
     health: rng.int(70, 100),
     unrest: rng.int(5, 25),
     sentenceDays: rng.int(minS, maxS),
     daysHeld: 0,
     assignment: "none",
-    dailyPayout: Math.round(BALANCE.payout[severity] * repScale),
+    dailyPayout: Math.round(BALANCE.payout[severity] * repScale * mods.payoutMult),
     alive: true,
   };
 }
 
 export function createGuard(state: GameState, rng: Rng): Guard {
+  const rarity = rollRarity(rng, state.tier);
+  const mods = guardRarityMods(rarity);
   return {
     id: mintId(state, "g"),
     name: randomGuardName(rng),
-    skill: rng.int(30, 70),
-    brutality: rng.int(20, 60),
-    wage: BALANCE.guards.baseWage,
+    rarity,
+    skill: rng.int(mods.skill[0], mods.skill[1]),
+    brutality: rng.int(mods.brutality[0], mods.brutality[1]),
+    wage: Math.round(BALANCE.guards.baseWage * mods.wageMult),
     fatigue: 0,
   };
 }

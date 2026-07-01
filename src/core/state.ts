@@ -15,6 +15,7 @@ export function createInitialState(seed: number): GameState {
     day: 1,
     tier: "village",
     reputation: BALANCE.start.reputation,
+    morality: 0,
     resources: {
       coin: BALANCE.start.coin,
       food: BALANCE.start.food,
@@ -58,6 +59,13 @@ export function pushLog(state: GameState, text: string, tone: LogEntry["tone"]):
 
 export function livingPrisoners(state: GameState): number {
   return state.prisoners.filter((p) => p.alive).length;
+}
+
+/** Average unrest across living prisoners (0 if empty). */
+export function averageUnrest(state: GameState): number {
+  const living = state.prisoners.filter((p) => p.alive);
+  if (living.length === 0) return 0;
+  return living.reduce((s, p) => s + p.unrest, 0) / living.length;
 }
 
 /**

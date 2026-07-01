@@ -26,6 +26,26 @@ export {
   createOffer,
   tierForReputation,
 } from "./factory";
+export {
+  rarityRank,
+  rollRarity,
+  prisonerRarityMods,
+  guardRarityMods,
+} from "./rarity";
+export {
+  moralityStanding,
+  moralityFactor,
+  adjustMorality,
+} from "./morality";
+export {
+  assessDangers,
+  dangerLevel,
+  riotChance,
+  fireChance,
+  diseaseChance,
+  escapeChance,
+  type DangerReport,
+} from "./danger";
 
 // ── Save / load ─────────────────────────────────────────────────────────────
 // GameState is plain JSON, so persistence is trivial and version-tagged.

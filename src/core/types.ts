@@ -10,6 +10,31 @@
 /** How dangerous / valuable a prisoner is. Drives payout, unrest, and intake gating. */
 export type Severity = "petty" | "violent" | "political" | "noble";
 
+/**
+ * A second axis, orthogonal to crime severity. Rarity is how *notorious* /
+ * remarkable an inmate (or guard) is. Rarer inmates pay far more and work a
+ * touch harder, but are more volatile and cunning — high-risk, high-reward.
+ * Rarer guards are more skilled but command higher wages. Rarity odds improve
+ * with the warden's tier, giving a collection/progression hook.
+ */
+export type Rarity =
+  | "common"
+  | "uncommon"
+  | "rare"
+  | "epic"
+  | "legendary"
+  | "mythic";
+
+/** Ordered low→high, so index also serves as a numeric rank. */
+export const RARITY_ORDER: Rarity[] = [
+  "common",
+  "uncommon",
+  "rare",
+  "epic",
+  "legendary",
+  "mythic",
+];
+
 /** Where a conscripted prisoner is assigned to labor. `none` = idle in cell. */
 export type LaborAssignment =
   | "none"
@@ -23,6 +48,8 @@ export interface Prisoner {
   id: string;
   name: string;
   severity: Severity;
+  /** Notoriety tier — see Rarity. Affects payout, labour, unrest, escape. */
+  rarity: Rarity;
   /** 0–100. At 0 the prisoner dies. */
   health: number;
   /** 0–100. High unrest fuels riots and escape attempts. */
@@ -40,6 +67,8 @@ export interface Prisoner {
 export interface Guard {
   id: string;
   name: string;
+  /** Notoriety tier — rarer warders roll higher skill but cost more in wages. */
+  rarity: Rarity;
   /** 0–100. Higher skill suppresses unrest and resolves events better. */
   skill: number;
   /** 0–100. Brutality suppresses unrest fast but raises death risk and lowers reputation. */
@@ -132,6 +161,14 @@ export interface GameState {
   tier: WardenTier;
   /** 0–100. The master progression metric. */
   reputation: number;
+  /**
+   * −100 (Tyrant) … 0 (Fair) … +100 (Saint). The warden's moral standing,
+   * shaped over time by how they treat inmates. Cruelty fears the cells into
+   * order but makes cornered riots deadlier and the crown call you a butcher;
+   * kindness lifts reputation and calms riots but breeds disrespect, slacking,
+   * and escapes.
+   */
+  morality: number;
   resources: Resources;
   prisoners: Prisoner[];
   guards: Guard[];

@@ -12,15 +12,18 @@ import {
   advanceDay,
   applyAction,
   applyDecision,
+  assessDangers,
   costs,
   createInitialState,
+  dangerLevel,
   livingPrisoners,
+  moralityStanding,
   summarize,
   type GameState,
   type LaborAssignment,
   type Prisoner,
 } from "../core";
-import { COLORS, FONT, VIEW } from "../ui/theme";
+import { COLORS, DANGER_COLOR, FONT, VIEW } from "../ui/theme";
 import { makeBar, makeButton, makePanel } from "../ui/widgets";
 import { loadGame, saveGame } from "../ui/save";
 import { Juice } from "../ui/fx";
@@ -250,11 +253,12 @@ export class GameScene extends Phaser.Scene {
 
   private buildKeepTab(): void {
     const s = this.state;
+    const stripBottom = this.buildStatusStrip(this.contentTop);
     const living = s.prisoners.filter((p) => p.alive);
     if (living.length === 0) {
       this.content.add(
         this.add
-          .text(VIEW.width / 2, this.contentTop + 40, "The cells stand empty.\nAccept a prisoner from the Offers tab.", {
+          .text(VIEW.width / 2, stripBottom + 30, "The cells stand empty.\nAccept a prisoner from the Offers tab.", {
             fontFamily: FONT.family,
             fontSize: "22px",
             color: COLORS.neutralCss,
@@ -262,12 +266,12 @@ export class GameScene extends Phaser.Scene {
           })
           .setOrigin(0.5, 0),
       );
-      this.buildLogPanel(this.contentTop + 160);
+      this.buildLogPanel(stripBottom + 120);
       return;
     }
 
     this.content.add(
-      this.add.text(16, this.contentTop, "Tap a prisoner to cycle their labour assignment:", {
+      this.add.text(16, stripBottom, "Tap a prisoner to cycle their labour assignment:", {
         fontFamily: FONT.family,
         fontSize: "16px",
         color: COLORS.neutralCss,
@@ -275,13 +279,106 @@ export class GameScene extends Phaser.Scene {
     );
 
     const cardH = 86;
-    const startY = this.contentTop + 28;
+    const startY = stripBottom + 28;
     const maxRows = Math.floor((this.contentBottom - startY - 150) / (cardH + 8));
     living.slice(0, maxRows).forEach((p, i) => {
       this.content.add(this.buildPrisonerCard(p, 16, startY + i * (cardH + 8), VIEW.width - 32, cardH));
     });
 
     this.buildLogPanel(startY + Math.min(living.length, maxRows) * (cardH + 8) + 6);
+  }
+
+  /** Warden morality (diverging bar) + honest next-day danger forecast. */
+  private buildStatusStrip(y: number): number {
+    const s = this.state;
+    const w = VIEW.width - 32;
+    const h = 132;
+    const panel = makePanel(this, 16, y, w, h);
+
+    // ── Morality ──
+    panel.add(
+      this.add.text(12, 8, `⚖  Standing: ${moralityStanding(s.morality)}`, {
+        fontFamily: FONT.family,
+        fontSize: "18px",
+        color:
+          s.morality > 10 ? COLORS.goodCss : s.morality < -10 ? COLORS.badCss : COLORS.neutralCss,
+      }),
+    );
+    panel.add(
+      this.add
+        .text(w - 12, 10, `${Math.round(s.morality)}`, {
+          fontFamily: FONT.family,
+          fontSize: "16px",
+          color: COLORS.neutralCss,
+        })
+        .setOrigin(1, 0),
+    );
+    const barX = 12;
+    const barY = 34;
+    const barW = w - 24;
+    const barH = 14;
+    const cx = barX + barW / 2;
+    panel.add(this.add.rectangle(barX, barY, barW, barH, COLORS.shadow).setOrigin(0, 0));
+    const half = barW / 2 - 2;
+    const mag = Math.min(1, Math.abs(s.morality) / 100) * half;
+    if (mag > 0) {
+      if (s.morality > 0) {
+        panel.add(this.add.rectangle(cx, barY + 1, mag, barH - 2, COLORS.moss).setOrigin(0, 0));
+      } else {
+        panel.add(this.add.rectangle(cx - mag, barY + 1, mag, barH - 2, COLORS.blood).setOrigin(0, 0));
+      }
+    }
+    panel.add(this.add.rectangle(cx, barY - 2, 2, barH + 4, COLORS.parchment).setOrigin(0.5, 0));
+    panel.add(
+      this.add.text(barX, barY + barH + 2, "Tyrant", { fontFamily: FONT.family, fontSize: "11px", color: COLORS.badCss }),
+    );
+    panel.add(
+      this.add
+        .text(barX + barW, barY + barH + 2, "Saint", { fontFamily: FONT.family, fontSize: "11px", color: COLORS.goodCss })
+        .setOrigin(1, 0),
+    );
+
+    // ── Danger forecast ──
+    panel.add(
+      this.add.text(12, 66, "Tomorrow's dangers (a warning, not a promise)", {
+        fontFamily: FONT.family,
+        fontSize: "12px",
+        color: COLORS.neutralCss,
+      }),
+    );
+    const dangers = assessDangers(s);
+    const items: Array<[string, number]> = [
+      ["Riot", dangers.riot],
+      ["Fire", dangers.fire],
+      ["Sick", dangers.disease],
+      ["Escape", dangers.escape],
+    ];
+    const colW = (w - 24) / items.length;
+    items.forEach(([label, p], i) => {
+      const cxi = 12 + i * colW;
+      const trackW = colW - 14;
+      panel.add(
+        this.add.text(cxi, 86, label, { fontFamily: FONT.family, fontSize: "13px", color: COLORS.parchmentCss }),
+      );
+      panel.add(this.add.rectangle(cxi, 104, trackW, 12, COLORS.shadow).setOrigin(0, 0));
+      panel.add(
+        this.add
+          .rectangle(cxi, 104, Math.max(0, Math.min(1, p)) * trackW, 12, DANGER_COLOR[dangerLevel(p)])
+          .setOrigin(0, 0),
+      );
+      panel.add(
+        this.add
+          .text(cxi + trackW, 118, `${Math.round(p * 100)}%`, {
+            fontFamily: FONT.family,
+            fontSize: "11px",
+            color: COLORS.neutralCss,
+          })
+          .setOrigin(1, 0),
+      );
+    });
+
+    this.content.add(panel);
+    return y + h + 10;
   }
 
   private buildPrisonerCard(
@@ -301,13 +398,14 @@ export class GameScene extends Phaser.Scene {
       this.add.text(34, 10, `${p.name}`, {
         fontFamily: FONT.family,
         fontSize: "20px",
-        color: COLORS.parchmentCss,
+        // Name tinted by rarity — the notoriety of the inmate at a glance.
+        color: COLORS.rarity[p.rarity] ?? COLORS.parchmentCss,
       }),
     );
     panel.add(
-      this.add.text(34, 34, `${p.severity}  •  ${p.sentenceDays}d left`, {
+      this.add.text(34, 34, `◆ ${p.rarity}  •  ${p.severity}  •  ${p.sentenceDays}d left`, {
         fontFamily: FONT.family,
-        fontSize: "15px",
+        fontSize: "14px",
         color: COLORS.neutralCss,
       }),
     );
@@ -373,13 +471,13 @@ export class GameScene extends Phaser.Scene {
         this.add.text(36, 40, `${p.name}`, {
           fontFamily: FONT.family,
           fontSize: "22px",
-          color: COLORS.parchmentCss,
+          color: COLORS.rarity[p.rarity] ?? COLORS.parchmentCss,
         }),
       );
       panel.add(
-        this.add.text(36, 70, `${p.severity}  •  sentence ${p.sentenceDays}d`, {
+        this.add.text(36, 70, `◆ ${p.rarity}  •  ${p.severity}  •  sentence ${p.sentenceDays}d`, {
           fontFamily: FONT.family,
-          fontSize: "16px",
+          fontSize: "15px",
           color: COLORS.neutralCss,
         }),
       );
@@ -489,7 +587,7 @@ export class GameScene extends Phaser.Scene {
         this.add.text(16, 34 + i * 20, `${g.name} — skill ${g.skill}, brutality ${g.brutality}, wage ${g.wage}`, {
           fontFamily: FONT.family,
           fontSize: "14px",
-          color: COLORS.neutralCss,
+          color: COLORS.rarity[g.rarity] ?? COLORS.neutralCss,
         }),
       );
     });

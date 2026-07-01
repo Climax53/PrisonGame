@@ -55,6 +55,17 @@ for (let i = 0; i < 5; i++) await endOneDay();
 
 await page.screenshot({ path: SHOT_PLAY });
 
+// Verify the new systems are live in the running game.
+const systems = await page.evaluate(() => {
+  const s = scene().state;
+  return {
+    moralityIsNumber: typeof s.morality === "number",
+    prisonersHaveRarity:
+      s.prisoners.length === 0 || s.prisoners.every((p) => typeof p.rarity === "string"),
+    guardsHaveRarity: s.guards.every((g) => typeof g.rarity === "string"),
+  };
+});
+
 // Force a riot decision: max unrest, no guards, but keep the keep solvent so a
 // riot (not starvation) is what fires. Retry until the modal appears.
 let raisedRiot = false;
@@ -91,6 +102,9 @@ if (raisedRiot) {
   resolvedClean = await page.evaluate(() => !scene().state.pendingDecision);
 }
 
+// Crushing a riot (options[0]) is a cruel act — morality should have dropped.
+const moralityAfterCrush = await page.evaluate(() => scene().state.morality);
+
 const finalDay = await page.evaluate(() => scene().state.day);
 await browser.close();
 
@@ -107,6 +121,10 @@ assert(finalDay >= 6, `advanced through animated days (reached day ${finalDay})`
 assert(raisedRiot, "a forced riot raised a decision");
 assert(modalRendered, "the decision modal rendered");
 assert(resolvedClean, "resolving the decision cleared it");
+assert(systems.moralityIsNumber, "morality system is live");
+assert(systems.prisonersHaveRarity, "prisoners carry a rarity");
+assert(systems.guardsHaveRarity, "guards carry a rarity");
+assert(moralityAfterCrush < 0, `crushing a riot lowered morality (got ${moralityAfterCrush})`);
 console.log(`screenshots → ${SHOT_PLAY}, ${SHOT_MODAL}`);
 
 process.exit(failed ? 1 : 0);

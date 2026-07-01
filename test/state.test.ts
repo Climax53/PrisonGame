@@ -13,6 +13,9 @@ describe("initial state", () => {
     expect(s.prisoners).toHaveLength(2);
     expect(s.prisoners.every((p) => p.alive)).toBe(true);
     expect(s.gameOver).toBe(false);
+    expect(s.morality).toBe(0);
+    expect(s.prisoners.every((p) => typeof p.rarity === "string")).toBe(true);
+    expect(s.guards.every((g) => typeof g.rarity === "string")).toBe(true);
   });
 
   it("mints unique ids for every entity", () => {

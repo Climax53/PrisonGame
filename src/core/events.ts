@@ -1,9 +1,9 @@
 // ─────────────────────────────────────────────────────────────────────────────
 // Random events
 //
-// Events are the drama of the game. Their probabilities are not fixed — they are
-// computed from the live state, so a mismanaged keep (high unrest, no buckets,
-// piles of firewood, too few guards) is genuinely more dangerous.
+// Events are the drama of the game. Their probabilities are computed in
+// danger.ts and *shared* with the on-screen danger forecast, so what the player
+// is warned about is exactly what the dice roll against here.
 //
 // Two events — riot and bribe — are too consequential to auto-resolve: they
 // raise a PendingDecision for the warden to answer (see decisions.ts). The rest
@@ -12,9 +12,13 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { BALANCE } from "./balance";
+import { diseaseChance, escapeChance, fireChance, riotChance } from "./danger";
 import { buildBribeDecision, buildRiotDecision } from "./decisions";
+import { deathReputationMultiplier, riotDeadlinessMultiplier } from "./morality";
+import { prisonerRarityMods } from "./rarity";
 import type { Rng } from "./rng";
 import {
+  averageUnrest,
   effectiveGuardSkill,
   killWeakestPrisoners,
   livingPrisoners,
@@ -27,13 +31,6 @@ const E = BALANCE.events;
 export interface EventResolution {
   events: GameEvent[];
   decision?: PendingDecision;
-}
-
-/** Average unrest across living prisoners (0 if empty). */
-function averageUnrest(state: GameState): number {
-  const living = state.prisoners.filter((p) => p.alive);
-  if (living.length === 0) return 0;
-  return living.reduce((s, p) => s + p.unrest, 0) / living.length;
 }
 
 /** Guard mitigation in [0,1]: fraction of harm prevented by the warder corps. */
@@ -58,116 +55,103 @@ export function resolveEvents(state: GameState, rng: Rng): EventResolution {
   const mitigation = guardMitigation(state);
 
   // ── Riot → decision (highest priority) ───────────────────────────────────
-  if (avgUnrest > E.riot.unrestThreshold && living > 0) {
-    const chance = Math.min(
-      E.riot.maxChance,
-      (avgUnrest - E.riot.unrestThreshold) * E.riot.perUnrestOver,
+  if (rng.chance(riotChance(state))) {
+    const severity = (avgUnrest - E.riot.unrestThreshold) / 50; // 0..~1
+    // Un-mitigated worst case; morality (cornered violence) and guards shape it.
+    const potentialDeaths = Math.max(
+      1,
+      Math.round(
+        severity *
+          Math.min(4, living) *
+          (1 - mitigation * 0.4) *
+          riotDeadlinessMultiplier(state),
+      ),
     );
-    if (rng.chance(chance)) {
-      const severity = (avgUnrest - E.riot.unrestThreshold) / 50; // 0..~1
-      // Un-mitigated worst case; the chosen response decides how bloody it gets.
-      const potentialDeaths = Math.max(
-        1,
-        Math.round(severity * Math.min(4, living) * (1 - mitigation * 0.4)),
-      );
-      decision = buildRiotDecision(state, potentialDeaths, mitigation);
-    }
+    decision = buildRiotDecision(state, potentialDeaths, mitigation);
   }
 
   // ── Fire ───────────────────────────────────────────────────────────────
-  {
-    const firewoodOver = Math.max(0, state.resources.firewood - 50);
-    const chance = E.fire.baseChance + firewoodOver * E.fire.perFirewoodOver50;
-    if (rng.chance(chance)) {
-      const lostWood = Math.min(state.resources.firewood, rng.int(10, 30));
-      const lostFood = Math.min(state.resources.food, rng.int(0, 15));
-      state.resources.firewood -= lostWood;
-      state.resources.food -= lostFood;
-      const deaths =
-        living > 0 && rng.chance(0.4 * (1 - mitigation))
-          ? killWeakestPrisoners(state, rng.int(1, 2), rng).length
-          : 0;
-      fatigueGuards(state);
-      const repDelta = -deaths * BALANCE.reputation.perDeath;
-      state.reputation += repDelta;
-      events.push({
-        kind: "fire",
-        day: state.day,
-        message: `Fire breaks out! ${lostWood} firewood and ${lostFood} food lost${
-          deaths ? `, ${deaths} perished` : ""
-        }.`,
-        deaths,
-        reputationDelta: repDelta,
-        coinDelta: 0,
-      });
-    }
+  if (rng.chance(fireChance(state))) {
+    const lostWood = Math.min(state.resources.firewood, rng.int(10, 30));
+    const lostFood = Math.min(state.resources.food, rng.int(0, 15));
+    state.resources.firewood -= lostWood;
+    state.resources.food -= lostFood;
+    const deaths =
+      living > 0 && rng.chance(0.4 * (1 - mitigation))
+        ? killWeakestPrisoners(state, rng.int(1, 2), rng).length
+        : 0;
+    fatigueGuards(state);
+    const repDelta = -deaths * BALANCE.reputation.perDeath * deathReputationMultiplier(state);
+    state.reputation += repDelta;
+    events.push({
+      kind: "fire",
+      day: state.day,
+      message: `Fire breaks out! ${lostWood} firewood and ${lostFood} food lost${
+        deaths ? `, ${deaths} perished` : ""
+      }.`,
+      deaths,
+      reputationDelta: repDelta,
+      coinDelta: 0,
+    });
   }
 
   // ── Disease ──────────────────────────────────────────────────────────────
-  {
-    const capacity = state.resources.buckets * BALANCE.upkeep.prisonersPerBucket;
-    const debt = Math.max(0, living - capacity);
-    const chance = Math.min(E.disease.maxChance, debt * E.disease.perSanitationDebt);
-    if (debt > 0 && rng.chance(chance)) {
-      let deaths = 0;
-      for (const p of state.prisoners) {
-        if (!p.alive) continue;
-        p.health -= rng.int(8, 20);
-        if (p.health <= 0) {
-          p.alive = false;
-          deaths++;
-        }
+  if (rng.chance(diseaseChance(state))) {
+    let deaths = 0;
+    for (const p of state.prisoners) {
+      if (!p.alive) continue;
+      p.health -= rng.int(8, 20);
+      if (p.health <= 0) {
+        p.alive = false;
+        deaths++;
       }
-      const repDelta = -deaths * BALANCE.reputation.perDeath;
-      state.reputation += repDelta;
-      events.push({
-        kind: "disease",
-        day: state.day,
-        message: `Gaol-fever spreads through the filth${
-          deaths ? `; ${deaths} die` : " but all survive"
-        }.`,
-        deaths,
-        reputationDelta: repDelta,
-        coinDelta: 0,
-      });
     }
+    const repDelta = -deaths * BALANCE.reputation.perDeath * deathReputationMultiplier(state);
+    state.reputation += repDelta;
+    events.push({
+      kind: "disease",
+      day: state.day,
+      message: `Gaol-fever spreads through the filth${
+        deaths ? `; ${deaths} die` : " but all survive"
+      }.`,
+      deaths,
+      reputationDelta: repDelta,
+      coinDelta: 0,
+    });
   }
 
   // ── Escape ───────────────────────────────────────────────────────────────
-  if (living > 0) {
-    const unrestOver = Math.max(0, avgUnrest - 40);
-    const emptySlots = Math.max(0, livingPrisoners(state) / 4 - state.guards.length);
-    const chance =
-      unrestOver * E.escape.perUnrestOver40 + emptySlots * E.escape.perEmptyGuardSlot;
-    if (rng.chance(Math.min(0.9, chance))) {
-      const candidates = state.prisoners.filter((p) => p.alive);
-      candidates.sort((a, b) => b.unrest - a.unrest);
-      const escapee = candidates[0];
-      const caught = rng.chance(mitigation);
-      if (caught) {
-        escapee.unrest = Math.max(0, escapee.unrest - 30);
-        escapee.health = Math.max(1, escapee.health - 15);
-        events.push({
-          kind: "escape",
-          day: state.day,
-          message: `${escapee.name} bolts for the gate — the warders drag them back.`,
-          deaths: 0,
-          reputationDelta: 0,
-          coinDelta: 0,
-        });
-      } else {
-        escapee.alive = false;
-        const repDelta = -BALANCE.reputation.perEscape;
-        state.reputation += repDelta;
-        events.push({
-          kind: "escape",
-          day: state.day,
-          message: `${escapee.name} escapes over the wall! Word will reach the magistrate.`,
-          deaths: 0,
-          reputationDelta: repDelta,
-          coinDelta: 0,
-        });
-      }
+  if (living > 0 && rng.chance(escapeChance(state))) {
+    const candidates = state.prisoners.filter((p) => p.alive);
+    candidates.sort((a, b) => b.unrest - a.unrest);
+    const escapee = candidates[0];
+    // Rarer inmates are cunning — harder to drag back.
+    const escapeMods = prisonerRarityMods(escapee.rarity);
+    const caught = rng.chance(mitigation / escapeMods.escapeMult);
+    if (caught) {
+      escapee.unrest = Math.max(0, escapee.unrest - 30);
+      escapee.health = Math.max(1, escapee.health - 15);
+      events.push({
+        kind: "escape",
+        day: state.day,
+        message: `${escapee.name} bolts for the gate — the warders drag them back.`,
+        deaths: 0,
+        reputationDelta: 0,
+        coinDelta: 0,
+      });
+    } else {
+      escapee.alive = false;
+      // Losing a notorious inmate is a far greater scandal.
+      const repDelta = -BALANCE.reputation.perEscape * escapeMods.repSwingMult;
+      state.reputation += repDelta;
+      events.push({
+        kind: "escape",
+        day: state.day,
+        message: `${escapee.name} escapes over the wall! Word will reach the magistrate.`,
+        deaths: 0,
+        reputationDelta: repDelta,
+        coinDelta: 0,
+      });
     }
   }
 

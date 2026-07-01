@@ -12,6 +12,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { BALANCE } from "./balance";
+import { adjustMorality, deathReputationMultiplier } from "./morality";
 import type { Rng } from "./rng";
 import { Rng as RngClass } from "./rng";
 import { evaluateGameOver, killWeakestPrisoners, pushLog } from "./state";
@@ -19,6 +20,7 @@ import type { GameEvent, GameState, PendingDecision, Prisoner } from "./types";
 import { clamp } from "./util";
 
 const R = BALANCE.reputation;
+const MOR = BALANCE.morality;
 
 function adjustReputation(state: GameState, delta: number): void {
   state.reputation = clamp(state.reputation + delta, R.min, R.max);
@@ -157,10 +159,12 @@ function resolveRiot(
   }
 
   if (optionId === "crush") {
+    // Ordering the clubs out is a cruel act, whatever the result.
+    adjustMorality(state, -MOR.perCrush);
     const deaths = killWeakestPrisoners(state, Math.round(potential), rng).length;
     ventUnrest(state, 35);
-    // Bloodshed plus a brutality scandal on top of the per-death hit.
-    adjustReputation(state, -(deaths * R.perDeath + 3));
+    // Bloodshed plus a brutality scandal, amplified if you're already a butcher.
+    adjustReputation(state, -(deaths * R.perDeath * deathReputationMultiplier(state) + 3));
     state.resources.coin -= 5 * deaths;
     const msg =
       deaths > 0
@@ -171,6 +175,8 @@ function resolveRiot(
   }
 
   if (optionId === "negotiate") {
+    // Choosing mercy and dialogue lifts the warden's moral standing.
+    adjustMorality(state, MOR.perNegotiate);
     const cost = 30 + Math.round(potential) * 10;
     if (state.resources.coin >= cost) {
       state.resources.coin -= cost;
@@ -214,6 +220,7 @@ function resolveBribe(
   const briber = state.prisoners.find((p) => p.id === briberId && p.alive);
 
   if (optionId === "accept") {
+    adjustMorality(state, -MOR.perBribeAccept); // corruption
     state.resources.coin += purse;
     if (briber) briber.unrest = clamp(briber.unrest - 10, 0, 100);
     const scandal = rng.chance(0.3);
@@ -230,6 +237,7 @@ function resolveBribe(
   }
 
   if (optionId === "refuse") {
+    adjustMorality(state, MOR.perBribeRefuse); // integrity
     const gain = rng.int(2, 4);
     adjustReputation(state, gain);
     if (briber) briber.unrest = clamp(briber.unrest + 5, 0, 100);
@@ -239,6 +247,7 @@ function resolveBribe(
   }
 
   // extort — demand double.
+  adjustMorality(state, -MOR.perExtort); // greed & intimidation
   if (rng.chance(0.5)) {
     state.resources.coin += purse * 2;
     const hit = rng.int(4, 8);

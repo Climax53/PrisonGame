@@ -10,6 +10,14 @@
 import { BALANCE } from "./balance";
 import { resolveEvents } from "./events";
 import { createOffer, tierForReputation } from "./factory";
+import {
+  adjustMorality,
+  deathReputationMultiplier,
+  laborMultiplier,
+  repGainMultiplier,
+  unrestDrift,
+} from "./morality";
+import { prisonerRarityMods } from "./rarity";
 import { Rng } from "./rng";
 import {
   averageBrutality,
@@ -22,6 +30,7 @@ import type { GameState, Prisoner, Severity } from "./types";
 import { clamp, round1 } from "./util";
 
 const R = BALANCE.reputation;
+const MOR = BALANCE.morality;
 
 /** Apply reputation change and keep it inside [min,max]. */
 function adjustReputation(state: GameState, delta: number): void {
@@ -58,12 +67,16 @@ function payWages(state: GameState): void {
 
 /** Conscripted labour produces resources, but costs unrest and risks injury. */
 function runLabor(state: GameState, rng: Rng): void {
+  // A cruel warden works inmates harder; a kind one lets them slack.
+  const moraleMult = laborMultiplier(state);
   for (const p of state.prisoners) {
     if (!p.alive || p.assignment === "none") continue;
     const job = BALANCE.labor[p.assignment];
-    // Output scales with the worker's health.
+    // Output scales with health, the worker's rarity (notorious craftsmen), and
+    // how feared/respected the warden is.
     const efficiency = 0.5 + (p.health / 100) * 0.5;
-    const produced = job.yield * efficiency;
+    const produced =
+      job.yield * efficiency * prisonerRarityMods(p.rarity).laborMult * moraleMult;
     state.resources[job.resource] = round1(
       state.resources[job.resource] + produced,
     );
@@ -124,11 +137,16 @@ function updateUnrest(state: GameState): void {
     skill * BALANCE.guards.skillSuppression +
     brutality * BALANCE.guards.brutalitySuppression;
 
+  // Morality shifts baseline mood for everyone: fear (cruel) calms, disrespect
+  // (kind) agitates.
+  const moraleDrift = unrestDrift(state);
   for (const p of state.prisoners) {
     if (!p.alive) continue;
-    let delta = BALANCE.unrestPressure[p.severity];
-    delta += overcrowd * 1.5; // crowded keeps simmer
+    // Rarer inmates are more volatile.
+    let delta = BALANCE.unrestPressure[p.severity] * prisonerRarityMods(p.rarity).unrestMult;
+    delta += overcrowd * 1.5; // crowded cells simmer
     delta -= suppression;
+    delta += moraleDrift;
     p.unrest = clamp(p.unrest + delta, 0, 100);
   }
 
@@ -152,6 +170,8 @@ function brutalityCasualties(state: GameState, rng: Rng): number {
     if (p.unrest > 60 && rng.chance((brutality / 100) * 0.05)) {
       p.alive = false;
       deaths++;
+      // Beating inmates to death darkens the warden's soul.
+      adjustMorality(state, -MOR.perBrutalDeath);
       pushLog(state, `${p.name} dies under the warders' discipline.`, "bad");
     }
   }
@@ -165,6 +185,8 @@ function resolveHealthDeaths(state: GameState): number {
     if (p.alive && p.health <= 0) {
       p.alive = false;
       deaths++;
+      // Letting inmates die of neglect is its own kind of cruelty.
+      adjustMorality(state, -MOR.perNeglectDeath);
       pushLog(state, `${p.name} dies in the cells.`, "bad");
     }
   }
@@ -174,11 +196,15 @@ function resolveHealthDeaths(state: GameState): number {
 /** Release prisoners who have served their sentence. */
 function releaseServed(state: GameState): number {
   let released = 0;
+  const gainMult = repGainMultiplier(state);
   for (const p of state.prisoners) {
     if (p.alive && p.sentenceDays <= 0) {
       p.alive = false; // leaves the keep
       released++;
-      adjustReputation(state, R.perRelease);
+      // Freeing a notorious inmate on good terms is a bigger reputation win.
+      const swing = prisonerRarityMods(p.rarity).repSwingMult;
+      adjustReputation(state, R.perRelease * swing * gainMult);
+      adjustMorality(state, MOR.perRelease);
       pushLog(state, `${p.name} has served their sentence and is freed.`, "good");
     }
   }
@@ -229,7 +255,10 @@ export function advanceDay(state: GameState): GameState {
 
   const preDeaths =
     resolveHealthDeaths(state) + brutalityCasualties(state, rng);
-  if (preDeaths > 0) adjustReputation(state, -preDeaths * R.perDeath);
+  // A cruel warden is judged a butcher; a kind one is given the benefit of doubt.
+  if (preDeaths > 0) {
+    adjustReputation(state, -preDeaths * R.perDeath * deathReputationMultiplier(state));
+  }
 
   const { events, decision } = resolveEvents(state, rng);
   state.lastEvents = events;
@@ -243,8 +272,12 @@ export function advanceDay(state: GameState): GameState {
   const anyBad =
     !!decision || events.some((e) => e.kind === "fire" || e.kind === "escape");
   if (!anyDeaths && !anyBad) {
-    adjustReputation(state, R.calmDayGain);
+    adjustReputation(state, R.calmDayGain * repGainMultiplier(state));
   }
+
+  // Employing brutal warders slowly hardens the warden's reputation for cruelty.
+  const brutalDrift = (averageBrutality(state) / 100) * MOR.brutalStaffDrift;
+  if (brutalDrift > 0) adjustMorality(state, -brutalDrift);
 
   // Clamp reputation after the event pass (events adjust it raw).
   state.reputation = clamp(state.reputation, R.min, R.max);
