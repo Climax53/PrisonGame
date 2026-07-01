@@ -3,7 +3,7 @@
 import { BALANCE } from "./balance";
 import { createGuard, createPrisoner, tierForReputation } from "./factory";
 import { Rng } from "./rng";
-import type { GameState, LogEntry } from "./types";
+import type { GameState, LogEntry, Prisoner } from "./types";
 
 /**
  * Build a fresh game from a seed. The seed makes the whole playthrough
@@ -60,6 +60,22 @@ export function livingPrisoners(state: GameState): number {
   return state.prisoners.filter((p) => p.alive).length;
 }
 
+/**
+ * Set the loss flags if a terminal condition is met. Shared by the daily tick
+ * and the decision system (a bad choice can end the game outright). Lives here,
+ * not in simulation.ts, to avoid an import cycle with decisions.ts.
+ */
+export function evaluateGameOver(state: GameState): void {
+  if (state.reputation <= BALANCE.reputation.min) {
+    state.gameOver = true;
+    state.gameOverReason =
+      "Your reputation has collapsed. The magistrate strips you of the keep.";
+  } else if (state.resources.coin <= -100) {
+    state.gameOver = true;
+    state.gameOverReason = "Bankrupt. Your creditors seize the keep.";
+  }
+}
+
 /** Average guard skill, accounting for fatigue. 0 if no guards. */
 export function effectiveGuardSkill(state: GameState): number {
   if (state.guards.length === 0) return 0;
@@ -74,4 +90,23 @@ export function effectiveGuardSkill(state: GameState): number {
 export function averageBrutality(state: GameState): number {
   if (state.guards.length === 0) return 0;
   return state.guards.reduce((sum, g) => sum + g.brutality, 0) / state.guards.length;
+}
+
+/**
+ * Kill up to `count` living prisoners, preferring the most unhealthy/unrestful
+ * (with a little noise). Shared by the event and decision systems so death
+ * always selects victims the same way. Returns the victims.
+ */
+export function killWeakestPrisoners(
+  state: GameState,
+  count: number,
+  rng: Rng,
+): Prisoner[] {
+  const living = state.prisoners.filter((p) => p.alive);
+  living.sort(
+    (a, b) => b.unrest - b.health - (a.unrest - a.health) + rng.range(-10, 10),
+  );
+  const victims = living.slice(0, Math.max(0, Math.min(count, living.length)));
+  for (const v of victims) v.alive = false;
+  return victims;
 }

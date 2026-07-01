@@ -97,13 +97,18 @@ export function makeBar(
   color: number,
 ): Phaser.GameObjects.Container {
   const clamped = Math.max(0, Math.min(1, ratio));
+  const fullWidth = width - 2;
   const track = scene.add
     .rectangle(0, 0, width, height, COLORS.shadow)
     .setOrigin(0, 0);
   const fillBar = scene.add
-    .rectangle(1, 1, Math.max(0, (width - 2) * clamped), height - 2, color)
+    .rectangle(1, 1, Math.max(0, fullWidth * clamped), height - 2, color)
     .setOrigin(0, 0);
-  return scene.add.container(x, y, [track, fillBar]);
+  const container = scene.add.container(x, y, [track, fillBar]);
+  // Expose the fill rect + its full width so callers can animate the bar.
+  container.setData("fill", fillBar);
+  container.setData("fullWidth", fullWidth);
+  return container;
 }
 
 /** A titled panel background. */

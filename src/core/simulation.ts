@@ -14,6 +14,7 @@ import { Rng } from "./rng";
 import {
   averageBrutality,
   effectiveGuardSkill,
+  evaluateGameOver,
   livingPrisoners,
   pushLog,
 } from "./state";
@@ -208,23 +209,13 @@ function ageRoster(state: GameState): void {
   }
 }
 
-function checkGameOver(state: GameState): void {
-  if (state.reputation <= R.min) {
-    state.gameOver = true;
-    state.gameOverReason =
-      "Your reputation has collapsed. The magistrate strips you of the keep.";
-  } else if (state.resources.coin <= -100) {
-    state.gameOver = true;
-    state.gameOverReason = "Bankrupt. Your creditors seize the keep.";
-  }
-}
-
 /**
  * Advance the simulation by one full day. Mutates and returns the same state
- * object. Safe to call only when `state.gameOver` is false.
+ * object. A no-op while the game is over or an unresolved decision is pending
+ * (the warden must answer the riot/bribe first).
  */
 export function advanceDay(state: GameState): GameState {
-  if (state.gameOver) return state;
+  if (state.gameOver || state.pendingDecision) return state;
 
   const rng = new Rng(state.rngState);
   state.lastEvents = [];
@@ -240,17 +231,17 @@ export function advanceDay(state: GameState): GameState {
     resolveHealthDeaths(state) + brutalityCasualties(state, rng);
   if (preDeaths > 0) adjustReputation(state, -preDeaths * R.perDeath);
 
-  const events = resolveEvents(state, rng);
+  const { events, decision } = resolveEvents(state, rng);
   state.lastEvents = events;
+  if (decision) state.pendingDecision = decision;
 
   const released = releaseServed(state);
 
-  // A genuinely calm day (no deaths, no bad events) slowly rebuilds trust.
-  const anyDeaths =
-    preDeaths > 0 || events.some((e) => e.deaths > 0);
-  const anyBad = events.some(
-    (e) => e.kind === "riot" || e.kind === "fire" || e.kind === "escape",
-  );
+  // A genuinely calm day (no deaths, no bad events, no looming decision) slowly
+  // rebuilds trust.
+  const anyDeaths = preDeaths > 0 || events.some((e) => e.deaths > 0);
+  const anyBad =
+    !!decision || events.some((e) => e.kind === "fire" || e.kind === "escape");
   if (!anyDeaths && !anyBad) {
     adjustReputation(state, R.calmDayGain);
   }
@@ -275,7 +266,7 @@ export function advanceDay(state: GameState): GameState {
     anyDeaths ? "bad" : "neutral",
   );
 
-  checkGameOver(state);
+  evaluateGameOver(state);
   return state;
 }
 

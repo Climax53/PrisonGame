@@ -13,7 +13,13 @@ export {
 } from "./state";
 export { advanceDay, summarize } from "./simulation";
 export { applyAction, costs, type ActionResult } from "./actions";
-export { resolveEvents } from "./events";
+export { resolveEvents, type EventResolution } from "./events";
+export {
+  applyDecision,
+  buildRiotDecision,
+  buildBribeDecision,
+  type DecisionOutcome,
+} from "./decisions";
 export {
   createPrisoner,
   createGuard,

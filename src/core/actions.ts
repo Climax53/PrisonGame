@@ -23,6 +23,9 @@ const ok: ActionResult = { ok: true };
 
 export function applyAction(state: GameState, action: PlayerAction): ActionResult {
   if (state.gameOver) return fail("The game is over.");
+  if (state.pendingDecision) {
+    return fail("A crisis demands your answer before anything else.");
+  }
 
   switch (action.type) {
     case "acceptOffer": {

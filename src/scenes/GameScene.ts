@@ -11,6 +11,7 @@ import Phaser from "phaser";
 import {
   advanceDay,
   applyAction,
+  applyDecision,
   costs,
   createInitialState,
   livingPrisoners,
@@ -22,6 +23,14 @@ import {
 import { COLORS, FONT, VIEW } from "../ui/theme";
 import { makeBar, makeButton, makePanel } from "../ui/widgets";
 import { loadGame, saveGame } from "../ui/save";
+import { Juice } from "../ui/fx";
+import { getSettings, updateSettings } from "../ui/settings";
+
+/** A resource/reputation snapshot used to animate deltas between renders. */
+interface Vitals {
+  coin: number;
+  reputation: number;
+}
 
 type Tab = "keep" | "offers" | "market";
 
@@ -46,7 +55,14 @@ export class GameScene extends Phaser.Scene {
   private activeTab: Tab = "keep";
   private hud!: Phaser.GameObjects.Container;
   private content!: Phaser.GameObjects.Container;
+  private modalLayer!: Phaser.GameObjects.Container;
   private toastText?: Phaser.GameObjects.Text;
+  private juice!: Juice;
+  /** Last drawn vitals, so bars/numbers can animate from the previous value. */
+  private displayed: Vitals = { coin: 0, reputation: 0 };
+  /** Screen position of the coin chip, for floating coin deltas. */
+  private coinChip = { x: 72, y: 72 };
+  private animateReputationFrom: number | null = null;
 
   constructor() {
     super("GameScene");
@@ -62,6 +78,9 @@ export class GameScene extends Phaser.Scene {
     this.cameras.main.setBackgroundColor(COLORS.bgCss);
     this.hud = this.add.container(0, 0);
     this.content = this.add.container(0, 0);
+    this.modalLayer = this.add.container(0, 0).setDepth(800);
+    this.juice = new Juice(this);
+    this.displayed = { coin: this.state.resources.coin, reputation: this.state.reputation };
     this.renderAll();
   }
 
@@ -74,6 +93,7 @@ export class GameScene extends Phaser.Scene {
   private renderAll(): void {
     this.renderHud();
     this.renderContent();
+    this.renderModal();
   }
 
   private persist(): void {
@@ -100,13 +120,31 @@ export class GameScene extends Phaser.Scene {
       color: COLORS.goldCss,
     });
     const tierLabel = this.add
-      .text(VIEW.width - 16, 16, `${tierTitle(s.tier)}  •  Day ${s.day}`, {
+      .text(VIEW.width - 58, 16, `${tierTitle(s.tier)}  •  Day ${s.day}`, {
         fontFamily: FONT.family,
         fontSize: "20px",
         color: COLORS.parchmentCss,
       })
       .setOrigin(1, 0);
     this.hud.add([title, tierLabel]);
+
+    // Settings gear — toggles reduced motion (accessibility).
+    this.hud.add(
+      makeButton(this, {
+        x: VIEW.width - 48,
+        y: 8,
+        width: 40,
+        height: 40,
+        label: "⚙",
+        fontSize: 22,
+        fill: COLORS.panelLight,
+        onTap: () => {
+          const next = !getSettings().reducedMotion;
+          updateSettings({ reducedMotion: next });
+          this.toast(`Reduced motion: ${next ? "ON" : "OFF"}`, COLORS.goldCss);
+        },
+      }),
+    );
 
     // Resource row.
     const chips: Array<[string, string, string]> = [
@@ -128,7 +166,7 @@ export class GameScene extends Phaser.Scene {
       this.hud.add(t);
     });
 
-    // Reputation bar.
+    // Reputation bar — animates from the previously displayed value.
     this.hud.add(
       this.add.text(16, 104, "Reputation", {
         fontFamily: FONT.family,
@@ -136,9 +174,14 @@ export class GameScene extends Phaser.Scene {
         color: COLORS.neutralCss,
       }),
     );
-    this.hud.add(
-      makeBar(this, 16, 124, VIEW.width - 32, 16, s.reputation / 100, COLORS.gold),
-    );
+    const repBar = makeBar(this, 16, 124, VIEW.width - 32, 16, s.reputation / 100, COLORS.gold);
+    this.hud.add(repBar);
+    if (this.animateReputationFrom !== null) {
+      const fill = repBar.getData("fill") as Phaser.GameObjects.Rectangle;
+      const full = repBar.getData("fullWidth") as number;
+      this.juice.tweenBar(fill, this.animateReputationFrom / 100, s.reputation / 100, full);
+      this.animateReputationFrom = null;
+    }
 
     // Net daily ledger hint.
     const net = sum.dailyIncome - sum.dailyWages;
@@ -171,8 +214,10 @@ export class GameScene extends Phaser.Scene {
           fill: this.activeTab === tab ? COLORS.gold : COLORS.panelLight,
           textColor: this.activeTab === tab ? COLORS.inkCss : COLORS.parchmentCss,
           onTap: () => {
+            if (this.activeTab === tab) return;
             this.activeTab = tab;
             this.renderAll();
+            this.juice.slideIn(this.content);
           },
         }),
       );
@@ -487,21 +532,174 @@ export class GameScene extends Phaser.Scene {
   }
 
   private endDay(): void {
-    advanceDay(this.state);
-    this.persist();
-    // Surface the day's headline event, if any.
-    const head = this.state.lastEvents[0];
-    if (head) this.toast(head.message, head.deaths > 0 ? COLORS.badCss : COLORS.goldCss);
-    this.renderAll();
+    if (this.state.pendingDecision || this.state.gameOver) return;
+    const beforeCoin = this.state.resources.coin;
+    const beforeRep = this.state.reputation;
+    const targetDay = this.state.day + 1;
+
+    this.juice.dayWipe(`Day ${targetDay}`, () => {
+      advanceDay(this.state);
+      this.persist();
+      this.animateReputationFrom = beforeRep;
+      this.displayed.reputation = this.state.reputation;
+      this.renderAll();
+    });
+
+    // Reveal the day's consequences once the wipe lifts.
+    const delay = getSettings().reducedMotion ? 0 : 620;
+    this.time.delayedCall(delay, () => this.dayFeedback(beforeCoin));
+  }
+
+  /** Screen-shake, flashes, floating coin, and a toast for the day's outcome. */
+  private dayFeedback(beforeCoin: number): void {
+    const deaths = this.state.lastEvents.reduce((n, e) => n + e.deaths, 0);
+    if (deaths > 0) {
+      this.juice.shake(420, 0.015);
+      this.juice.flash(COLORS.blood);
+    } else if (this.state.lastEvents.some((e) => e.kind === "fire")) {
+      this.juice.shake(300, 0.01);
+    }
+    const coinDelta = Math.round(this.state.resources.coin - beforeCoin);
+    if (coinDelta !== 0) {
+      this.juice.floatNumber(
+        this.coinChip.x,
+        this.coinChip.y,
+        `${coinDelta > 0 ? "+" : ""}${coinDelta}`,
+        coinDelta > 0 ? COLORS.goldCss : COLORS.bloodCss,
+      );
+    }
+    this.displayed.coin = this.state.resources.coin;
+
+    // If a decision is pending, the modal speaks for the day; else toast it.
+    if (!this.state.pendingDecision) {
+      const head = this.state.lastEvents[0];
+      if (head) this.toast(head.message, head.deaths > 0 ? COLORS.badCss : COLORS.goldCss);
+    }
   }
 
   private doAction(action: Parameters<typeof applyAction>[1], _tab: Tab): void {
+    const beforeCoin = this.state.resources.coin;
     const res = applyAction(this.state, action);
     if (!res.ok && res.error) {
       this.toast(res.error, COLORS.badCss);
     }
     this.persist();
     this.renderAll();
+    const coinDelta = Math.round(this.state.resources.coin - beforeCoin);
+    if (coinDelta !== 0) {
+      this.juice.floatNumber(
+        this.coinChip.x,
+        this.coinChip.y,
+        `${coinDelta > 0 ? "+" : ""}${coinDelta}`,
+        coinDelta > 0 ? COLORS.goldCss : COLORS.bloodCss,
+      );
+    }
+  }
+
+  // ── Decision modal ─────────────────────────────────────────────────────────
+  private renderModal(): void {
+    this.modalLayer.removeAll(true);
+    const d = this.state.pendingDecision;
+    if (!d || this.state.gameOver) return;
+
+    // A full-screen backdrop that swallows input to the game beneath.
+    this.modalLayer.add(
+      this.add
+        .rectangle(0, 0, VIEW.width, VIEW.height, COLORS.shadow, 0.82)
+        .setOrigin(0, 0)
+        .setInteractive(),
+    );
+
+    const panelW = VIEW.width - 56;
+    const optH = 92;
+    const panelH = 150 + d.options.length * (optH + 14);
+    const px = 28;
+    const py = Math.max(60, (VIEW.height - panelH) / 2);
+    const panel = makePanel(this, px, py, panelW, panelH, d.kind === "riot" ? "⚔  RIOT!" : "💰  A Quiet Word");
+
+    panel.add(
+      this.add.text(16, 44, d.prompt, {
+        fontFamily: FONT.family,
+        fontSize: "18px",
+        color: COLORS.parchmentCss,
+        align: "left",
+        wordWrap: { width: panelW - 32 },
+      }),
+    );
+
+    d.options.forEach((o, i) => {
+      const oy = 118 + i * (optH + 14);
+      panel.add(
+        makeButton(this, {
+          x: 16,
+          y: oy,
+          width: panelW - 32,
+          height: 52,
+          label: o.label,
+          fontSize: 22,
+          fill: COLORS.panelLight,
+          onTap: () => this.resolveDecision(o.id),
+        }),
+      );
+      panel.add(
+        this.add.text(20, oy + 56, o.hint, {
+          fontFamily: FONT.family,
+          fontSize: "14px",
+          color: COLORS.neutralCss,
+          wordWrap: { width: panelW - 40 },
+        }),
+      );
+    });
+
+    this.modalLayer.add(panel);
+
+    if (!getSettings().reducedMotion) {
+      panel.setScale(0.92);
+      panel.setAlpha(0);
+      this.tweens.add({
+        targets: panel,
+        scale: 1,
+        alpha: 1,
+        duration: 220,
+        ease: "Back.easeOut",
+      });
+    }
+  }
+
+  private resolveDecision(optionId: string): void {
+    const beforeCoin = this.state.resources.coin;
+    const beforeRep = this.state.reputation;
+    const out = applyDecision(this.state, optionId);
+    this.persist();
+    this.animateReputationFrom = beforeRep;
+    this.displayed.reputation = this.state.reputation;
+    this.renderAll(); // pendingDecision now cleared → modal closes
+
+    if (out.ok) {
+      const deaths = out.deaths ?? 0;
+      if (deaths > 0) {
+        this.juice.shake(440, 0.016);
+        this.juice.flash(COLORS.blood);
+      }
+      if (out.message) {
+        const c =
+          out.tone === "good"
+            ? COLORS.goodCss
+            : out.tone === "bad"
+              ? COLORS.badCss
+              : COLORS.goldCss;
+        this.toast(out.message, c);
+      }
+      const coinDelta = Math.round(this.state.resources.coin - beforeCoin);
+      if (coinDelta !== 0) {
+        this.juice.floatNumber(
+          this.coinChip.x,
+          this.coinChip.y,
+          `${coinDelta > 0 ? "+" : ""}${coinDelta}`,
+          coinDelta > 0 ? COLORS.goldCss : COLORS.bloodCss,
+        );
+      }
+    }
   }
 
   private renderGameOver(): void {

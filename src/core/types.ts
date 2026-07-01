@@ -99,6 +99,33 @@ export interface LogEntry {
   tone: "good" | "bad" | "neutral";
 }
 
+// ── Decisions ────────────────────────────────────────────────────────────────
+// Some events are too consequential to auto-resolve. They pause the day and ask
+// the warden to choose. This is the genre's most-loved mechanic: meaningful,
+// legible trade-offs. Effects are deferred to the chosen option and applied by
+// applyDecision(), keeping everything deterministic.
+
+export type DecisionKind = "riot" | "bribe";
+
+/** One selectable response to a pending decision. */
+export interface DecisionOption {
+  id: string;
+  label: string;
+  /** Short, honest hint at the trade-off shown under the button. */
+  hint: string;
+}
+
+/** A situation awaiting the warden's choice. Plain data so it saves/loads. */
+export interface PendingDecision {
+  kind: DecisionKind;
+  day: number;
+  /** The situation text shown at the top of the modal. */
+  prompt: string;
+  options: DecisionOption[];
+  /** Data needed to resolve the outcome (ids, amounts). Plain values only. */
+  context: Record<string, number | string>;
+}
+
 /** The complete serializable game state. Saving = JSON.stringify(state). */
 export interface GameState {
   day: number;
@@ -115,6 +142,8 @@ export interface GameState {
   log: LogEntry[];
   /** Events resolved on the most recent day (for UI highlight). */
   lastEvents: GameEvent[];
+  /** A choice awaiting the warden. Blocks ending the next day until resolved. */
+  pendingDecision?: PendingDecision;
   /** Seeded RNG cursor — kept in state so saves are fully deterministic. */
   rngState: number;
   /** True once a loss condition is reached. */

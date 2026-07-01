@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { createInitialState } from "../src/core/state";
 import { advanceDay, summarize } from "../src/core/simulation";
+import { applyDecision } from "../src/core/decisions";
 import { BALANCE } from "../src/core/balance";
 
 describe("advanceDay", () => {
@@ -73,10 +74,14 @@ describe("advanceDay", () => {
     const s = createInitialState(1);
     s.reputation = 1;
     // Force a brutal, doomed keep: starve and freeze everyone repeatedly.
-    for (let i = 0; i < 40 && !s.gameOver; i++) {
+    // Resolve any riot/bribe decision the chaos raises so the day loop proceeds.
+    for (let i = 0; i < 60 && !s.gameOver; i++) {
       s.resources.food = 0;
       s.resources.firewood = 0;
       advanceDay(s);
+      if (s.pendingDecision) {
+        applyDecision(s, s.pendingDecision.options[0].id);
+      }
     }
     expect(s.gameOver).toBe(true);
     expect(s.gameOverReason).toBeTruthy();

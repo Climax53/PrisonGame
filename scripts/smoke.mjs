@@ -1,17 +1,16 @@
-// Headless smoke-test: builds are served by vite preview separately; this script
-// loads the page in real Chromium, asserts the game boots with no console
-// errors, drives several in-game days via the live core, and writes a
-// screenshot. Exits non-zero on any failure so CI can gate on it.
+// Headless smoke-test in real Chromium. Boots the built game, drives several
+// animated days (waiting for each day-wipe to land), forces a RIOT decision and
+// resolves it through the live core, checks for console errors, and writes
+// screenshots of normal play and the decision modal. Exits non-zero on failure.
 
 import { chromium } from "playwright";
 import { existsSync } from "node:fs";
 
 const URL = process.env.SMOKE_URL ?? "http://localhost:4173/";
-const OUT = process.env.SMOKE_SHOT ?? "scripts/screenshot.png";
+const SHOT_PLAY = process.env.SMOKE_SHOT ?? "scripts/screenshot.png";
+const SHOT_MODAL = "scripts/screenshot-decision.png";
 
 const errors = [];
-// Prefer a Chromium pre-installed in this environment (so we don't download a
-// version-pinned one); fall back to Playwright's own managed browser in CI.
 const PINNED =
   process.env.CHROMIUM_PATH ?? "/opt/pw-browsers/chromium-1194/chrome-linux/chrome";
 const launchOpts = {
@@ -25,32 +24,74 @@ page.on("console", (m) => {
 });
 page.on("pageerror", (e) => errors.push(String(e)));
 
-await page.goto(URL, { waitUntil: "networkidle" });
+// Expose a browser-side helper so page.evaluate/waitForFunction can reach the
+// live scene (free variables aren't captured across the Node↔browser boundary).
+await page.addInitScript(() => {
+  window.scene = () => window.__GAME__.scene.getScene("GameScene");
+});
 
-// Wait for the Phaser game and our GameScene to be live.
+await page.goto(URL, { waitUntil: "networkidle" });
 await page.waitForFunction(
-  () => {
-    const g = window.__GAME__;
-    return g && g.scene && g.scene.getScene("GameScene");
-  },
+  () => window.__GAME__?.scene?.getScene("GameScene"),
   { timeout: 15000 },
 );
 
-// Read initial day, drive 5 days through the real core, assert it advanced.
-const result = await page.evaluate(() => {
-  const scene = window.__GAME__.scene.getScene("GameScene");
-  const startDay = scene["state"].day;
-  for (let i = 0; i < 5; i++) scene["endDay"]();
-  return {
-    startDay,
-    endDay: scene["state"].day,
-    prisoners: scene["state"].prisoners.length,
-    coin: scene["state"].resources.coin,
-    logLines: scene["state"].log.length,
-  };
-});
+const startDay = await page.evaluate(() => scene().state.day);
 
-await page.screenshot({ path: OUT, fullPage: false });
+// Drive 5 animated days, waiting for each wipe to land (exercises tweens,
+// floating numbers, screen effects — all under normal motion).
+async function endOneDay() {
+  const cur = await page.evaluate(() => scene().state.day);
+  await page.evaluate(() => scene().endDay());
+  await page.waitForFunction((c) => scene().state.day > c, cur, { timeout: 6000 });
+  // Resolve any decision the day raised so the loop can continue.
+  const pending = await page.evaluate(() => !!scene().state.pendingDecision);
+  if (pending) {
+    await page.evaluate(() => scene().resolveDecision(scene().state.pendingDecision.options[0].id));
+    await page.waitForFunction(() => !scene().state.pendingDecision, { timeout: 6000 });
+  }
+}
+for (let i = 0; i < 5; i++) await endOneDay();
+
+await page.screenshot({ path: SHOT_PLAY });
+
+// Force a riot decision: max unrest, no guards, but keep the keep solvent so a
+// riot (not starvation) is what fires. Retry until the modal appears.
+let raisedRiot = false;
+for (let i = 0; i < 15 && !raisedRiot; i++) {
+  await page.evaluate(() => {
+    const s = scene().state;
+    s.reputation = 85;
+    s.resources.food = 500;
+    s.resources.firewood = 40;
+    s.resources.coin = 800;
+    s.guards = [];
+    for (const p of s.prisoners) p.unrest = 100;
+  });
+  const cur = await page.evaluate(() => scene().state.day);
+  await page.evaluate(() => scene().endDay());
+  await page.waitForFunction((c) => scene().state.day > c, cur, { timeout: 6000 });
+  raisedRiot = await page.evaluate(
+    () => scene().state.pendingDecision?.kind === "riot",
+  );
+}
+
+let modalRendered = false;
+let resolvedClean = false;
+if (raisedRiot) {
+  await page.waitForTimeout(400); // let the modal animate in
+  modalRendered = await page.evaluate(
+    () => scene().children.list.some((c) => c.depth === 800 && c.length > 0),
+  );
+  await page.screenshot({ path: SHOT_MODAL });
+  // Resolve it and confirm the decision clears.
+  await page.evaluate(() =>
+    scene().resolveDecision(scene().state.pendingDecision.options[0].id),
+  );
+  resolvedClean = await page.evaluate(() => !scene().state.pendingDecision);
+}
+
+const finalDay = await page.evaluate(() => scene().state.day);
 await browser.close();
 
 let failed = false;
@@ -61,10 +102,11 @@ const assert = (cond, msg) => {
 
 assert(errors.length === 0, `no console/page errors (saw ${errors.length})`);
 if (errors.length) errors.slice(0, 5).forEach((e) => console.log("   ↳", e));
-assert(result.startDay === 1, `game starts on day 1 (got ${result.startDay})`);
-assert(result.endDay === 6, `advanced 5 days to day 6 (got ${result.endDay})`);
-assert(result.logLines > 0, `chronicle has entries (${result.logLines})`);
-console.log("state after 5 days:", JSON.stringify(result));
-console.log(`screenshot → ${OUT}`);
+assert(startDay === 1, `game starts on day 1 (got ${startDay})`);
+assert(finalDay >= 6, `advanced through animated days (reached day ${finalDay})`);
+assert(raisedRiot, "a forced riot raised a decision");
+assert(modalRendered, "the decision modal rendered");
+assert(resolvedClean, "resolving the decision cleared it");
+console.log(`screenshots → ${SHOT_PLAY}, ${SHOT_MODAL}`);
 
 process.exit(failed ? 1 : 0);
