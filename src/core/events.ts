@@ -14,7 +14,11 @@
 import { BALANCE } from "./balance";
 import { diseaseChance, escapeChance, fireChance, riotChance } from "./danger";
 import { buildBribeDecision, buildRiotDecision } from "./decisions";
-import { deathReputationMultiplier, riotDeadlinessMultiplier } from "./morality";
+import {
+  adjustMorality,
+  deathReputationMultiplier,
+  riotDeadlinessMultiplier,
+} from "./morality";
 import { prisonerRarityMods } from "./rarity";
 import type { Rng } from "./rng";
 import {
@@ -106,6 +110,12 @@ export function resolveEvents(state: GameState, rng: Rng): EventResolution {
         deaths++;
       }
     }
+    if (deaths > 0) {
+      // Dying of gaol-fever is a neglect death like any other: it darkens the
+      // warden's soul and works the warders, same as fire/starvation paths.
+      adjustMorality(state, -BALANCE.morality.perNeglectDeath * deaths);
+      fatigueGuards(state);
+    }
     const repDelta = -deaths * BALANCE.reputation.perDeath * deathReputationMultiplier(state);
     state.reputation += repDelta;
     events.push({
@@ -173,7 +183,9 @@ export function resolveEvents(state: GameState, rng: Rng): EventResolution {
       });
     } else {
       const fine = rng.int(15, 40);
-      const actualFine = Math.min(state.resources.coin, fine);
+      // Only seize coin the warden actually has — a negative balance must not
+      // turn a fine into a payout.
+      const actualFine = Math.min(Math.max(0, state.resources.coin), fine);
       const repDelta = -rng.int(2, 5);
       state.resources.coin -= actualFine;
       state.reputation += repDelta;

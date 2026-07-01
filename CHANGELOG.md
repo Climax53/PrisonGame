@@ -2,6 +2,30 @@
 
 ## Unreleased — "Professionalization" cycle
 
+### Fixed (independent adversarial review — 10 findings, all resolved)
+- **Fines could PAY an indebted warden:** with negative coin, a disorderly
+  inspection's `min(coin, fine)` went negative and *added* money. Fines now
+  seize only seizable coin.
+- **Failed payroll silently erased debt** (clamped negative balances to 0),
+  making bankruptcy nearly unreachable via wages. Partial payment now spends
+  only what exists; debt persists.
+- **Cross-device determinism break:** victim selection drew RNG inside a sort
+  comparator (invalid comparator + engine-dependent draw count — a save
+  replayed on iPhone vs desktop would diverge). Scores are now precomputed,
+  exactly one draw per prisoner (proven by an RNG-cursor test).
+- Payroll failure no longer reshuffles the visible guard roster.
+- A briber who left the keep before the player answered no longer pays out;
+  riots can no longer charge for "phantom" rioters after same-tick releases
+  (costs/deaths capped by the real living count; empty keep fizzles).
+- Disease deaths now darken morality and fatigue guards like every other
+  neglect death.
+- Decision outcome events now carry their real coin/reputation deltas.
+- New-game seeds mix in wall-clock time (fresh installs previously clustered
+  onto near-identical seeds).
+- Game over clears any pending decision from the save.
+- New `test/audit-fixes.test.ts` regression suite encodes every finding;
+  tests 87 → 102.
+
 ### Fixed (audit findings — Step 1 of the professionalization pass)
 - **Critical:** saves from the previous release (pre-morality/pre-rarity)
   loaded and then hard-crashed the game on the first End Day. New versioned

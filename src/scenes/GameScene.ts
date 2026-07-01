@@ -100,8 +100,11 @@ export class GameScene extends Phaser.Scene {
 
   /** A non-deterministic seed for new games (RNG itself stays seeded/pure). */
   private makeSeed(): number {
-    // performance.now avoids the banned-in-core Date.now while still varying.
-    return Math.floor(performance.now() * 1000) ^ 0x9e3779b9;
+    // Date.now is banned inside the core (determinism), but this scene IS the
+    // boundary. performance.now alone restarts near 0 every launch and is
+    // coarsened by browsers, so fresh installs would cluster onto the same
+    // seeds — mix in wall-clock time for real spread.
+    return (Date.now() ^ Math.floor(performance.now() * 1e6)) | 0;
   }
 
   private renderAll(): void {

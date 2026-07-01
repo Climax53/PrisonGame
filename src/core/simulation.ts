@@ -53,11 +53,17 @@ function payWages(state: GameState): void {
     state.resources.coin -= wages;
     return;
   }
-  // Can't make payroll: the lowest-skill guard walks off the job.
-  state.resources.coin = Math.max(0, state.resources.coin - wages);
+  // Can't make payroll: spend whatever positive coin remains (never let a
+  // failed payday erase existing debt), and the lowest-skill guard walks.
+  const affordable = Math.max(0, Math.min(state.resources.coin, wages));
+  state.resources.coin -= affordable;
   if (state.guards.length > 0) {
-    state.guards.sort((a, b) => a.skill - b.skill);
-    const quitter = state.guards.shift()!;
+    // Find the quitter without reordering the roster the player sees.
+    let idx = 0;
+    for (let i = 1; i < state.guards.length; i++) {
+      if (state.guards[i].skill < state.guards[idx].skill) idx = i;
+    }
+    const [quitter] = state.guards.splice(idx, 1);
     pushLog(state, `${quitter.name} quits over unpaid wages.`, "bad");
     for (const p of state.prisoners) {
       if (p.alive) p.unrest = clamp(p.unrest + 6, 0, 100);

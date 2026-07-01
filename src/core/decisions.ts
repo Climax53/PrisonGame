@@ -115,6 +115,8 @@ export function applyDecision(
   }
 
   const rng: Rng = new RngClass(state.rngState);
+  const coinBefore = state.resources.coin;
+  const repBefore = state.reputation;
   let outcome: DecisionOutcome;
 
   if (decision.kind === "riot") {
@@ -129,15 +131,16 @@ export function applyDecision(
   state.reputation = clamp(state.reputation, R.min, R.max);
   state.pendingDecision = undefined;
 
-  // Mirror the outcome into the day's event list so the UI can flash it.
+  // Mirror the outcome into the day's event list so the UI can flash it,
+  // carrying the real net effect of the chosen option.
   if (outcome.message) {
     const ev: GameEvent = {
       kind: decision.kind,
       day: state.day,
       message: outcome.message,
       deaths: outcome.deaths ?? 0,
-      reputationDelta: 0,
-      coinDelta: 0,
+      reputationDelta: state.reputation - repBefore,
+      coinDelta: state.resources.coin - coinBefore,
     };
     state.lastEvents = [ev, ...state.lastEvents];
   }
@@ -152,7 +155,16 @@ function resolveRiot(
   optionId: string,
   decision: PendingDecision,
 ): DecisionOutcome {
-  const potential = decision.context.potentialDeaths as number;
+  // The toll was estimated when the riot broke out; releases/deaths later in
+  // the same tick can shrink the roster, so cap against who is actually here.
+  const living = state.prisoners.filter((p) => p.alive).length;
+  const potential = Math.min(decision.context.potentialDeaths as number, living);
+
+  if (living === 0) {
+    const msg = "The cells stand empty — the riot dies with no one left to fight.";
+    pushLog(state, msg, "neutral");
+    return { ok: true, message: msg, tone: "neutral", deaths: 0 };
+  }
 
   for (const g of state.guards) {
     g.fatigue = clamp(g.fatigue + BALANCE.guards.fatiguePerEvent, 0, 100);
@@ -218,6 +230,14 @@ function resolveBribe(
   const purse = decision.context.purse as number;
   const briberId = decision.context.briberId as string;
   const briber = state.prisoners.find((p) => p.id === briberId && p.alive);
+
+  // The briber may have been released or died later in the same tick — the
+  // purse leaves with its owner; no coin, no morality, no scandal.
+  if (!briber) {
+    const msg = `${decision.context.briberName} is gone from the keep — and the purse with them.`;
+    pushLog(state, msg, "neutral");
+    return { ok: true, message: msg, tone: "neutral" };
+  }
 
   if (optionId === "accept") {
     adjustMorality(state, -MOR.perBribeAccept); // corruption

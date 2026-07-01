@@ -82,6 +82,9 @@ export function evaluateGameOver(state: GameState): void {
     state.gameOver = true;
     state.gameOverReason = "Bankrupt. Your creditors seize the keep.";
   }
+  // A fallen keep has no decisions left to make — don't let a dead modal
+  // linger in the save.
+  if (state.gameOver) state.pendingDecision = undefined;
 }
 
 /** Average guard skill, accounting for fatigue. 0 if no guards. */
@@ -111,9 +114,15 @@ export function killWeakestPrisoners(
   rng: Rng,
 ): Prisoner[] {
   const living = state.prisoners.filter((p) => p.alive);
-  living.sort(
-    (a, b) => b.unrest - b.health - (a.unrest - a.health) + rng.range(-10, 10),
-  );
+  // Score each prisoner ONCE (unrest-heavy, health-protective, small noise),
+  // then sort by the precomputed score. Drawing RNG inside a sort comparator
+  // would both violate the comparator contract and consume an engine-dependent
+  // number of draws — silently breaking cross-device determinism.
+  const score = new Map<string, number>();
+  for (const p of living) {
+    score.set(p.id, p.unrest - p.health + rng.range(-10, 10));
+  }
+  living.sort((a, b) => score.get(b.id)! - score.get(a.id)!);
   const victims = living.slice(0, Math.max(0, Math.min(count, living.length)));
   for (const v of victims) v.alive = false;
   return victims;
