@@ -87,9 +87,30 @@ the economy can be re-balanced without touching logic.
 
 ## 4. Prisoners
 
-Each inmate has: **severity**, **health** (0–100, death at 0), **unrest**
-(0–100, fuels riots/escapes), **sentence** (days remaining → release on 0), and
-a **labour assignment**.
+Each inmate has: **severity**, **rarity**, **health** (0–100, death at 0),
+**unrest** (0–100, fuels riots/escapes), **sentence** (days remaining → release
+on 0), and a **labour assignment**.
+
+### Rarity — the notoriety axis (`src/core/rarity.ts`)
+
+Orthogonal to crime severity, every inmate and guard carries a rarity:
+**common → uncommon → rare → epic → legendary → mythic**. It's a high-risk /
+high-reward and progression dial:
+
+| Rarity | Prisoner: pay | labour | unrest | escape cunning | Guard: skill | wage |
+|---|---|---|---|---|---|---|
+| common | ×1.0 | ×1.0 | ×1.0 | ×1.0 | 20–45 | ×1.0 |
+| uncommon | ×1.35 | ×1.05 | ×1.1 | ×1.1 | 30–55 | ×1.2 |
+| rare | ×1.8 | ×1.1 | ×1.25 | ×1.3 | 42–68 | ×1.45 |
+| epic | ×2.4 | ×1.15 | ×1.45 | ×1.6 | 55–80 | ×1.8 |
+| legendary | ×3.2 | ×1.2 | ×1.7 | ×2.0 | 68–90 | ×2.3 |
+| mythic | ×4.5 | ×1.25 | ×2.0 | ×2.5 | 82–99 | ×3.0 |
+
+A mythic inmate is a fortune in daily pay and works a touch harder — but is
+wildly volatile, escapes cunningly, and losing one is a headline scandal
+(reputation swing scales with rarity). **Rarity odds improve with your tier**
+(a village sees only common/uncommon; the crown surfaces legendaries and
+mythics), giving a collection/progression hook on top of the reputation ladder.
 
 | Severity | Daily pay (base) | Unrest pressure | Sentence | Sent at tier |
 |---|---|---|---|---|
@@ -163,6 +184,42 @@ Effects are deferred to the chosen option and applied deterministically
 (`src/core/decisions.ts`), so outcomes are reproducible given (seed + choices).
 Per design principle, the game **never scolds** the player for a valid choice —
 consequences, not narration, are the verdict.
+
+### Danger forecast (`src/core/danger.ts`)
+
+The keep shows honest, growing/shrinking **risk bars** for the next day —
+Riot, Fire, Sickness, Escape. These read from the *exact same probability
+formulas the event engine rolls against* (`events.ts` imports `danger.ts`), so
+the warning is trustworthy: what you see is the real chance. Implements research
+directive #3 (telegraph danger the day before), turning unfair-feeling loss into
+player-attributable loss.
+
+Crucially the bars are **probabilities, not certainties** — the dice still roll.
+A high bar can pass quietly; a low bar can still bite. So the player keeps making
+hard calls on the fly rather than reading the future.
+
+## 6a. Morality — the warden's soul (`src/core/morality.ts`)
+
+A single scalar, **−100 (Tyrant) … 0 (Fair) … +100 (Saint)**, that the player
+never sets directly. It drifts from how they treat inmates (crushing riots,
+accepting bribes, employing brutal warders, letting inmates die of neglect push
+it down; negotiating, refusing bribes, freeing inmates push it up). It is
+deliberately **two-sided — neither extreme is strictly better**:
+
+| | Cruel (Tyrant) | Kind (Saint) |
+|---|---|---|
+| Baseline unrest | **−** feared into order | **+** disrespect & agitation |
+| Labour output | **+** worked harder | **−** they slack |
+| Escape attempts | **−** terrified | **+** emboldened |
+| Riot deadliness | **+** cornered violence | **−** calmer |
+| Reputation on a death | **×1.4** (called a butcher) | **×0.6** (given benefit of doubt) |
+| Reputation gains | **×0.6** (distrusted) | **×1.4** (beloved) |
+
+So the classic bind: cruelty buys quiet, obedient, hard-working cells that turn
+into a bloodbath the moment a riot erupts and stain your name with every death;
+kindness wins public love and calm riots but breeds a lazy, disrespectful,
+escape-prone population. The player finds their own point on the spectrum — and
+lives with it. All couplings are pure multipliers (unit-tested).
 
 ---
 

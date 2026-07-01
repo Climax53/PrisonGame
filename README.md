@@ -38,6 +38,14 @@ Riots and bribes pause the day as **telegraphed trade-off decisions** (crush the
 riot vs. negotiate; pocket the bribe vs. refuse) — the design is grounded in
 real player-sentiment research: **[docs/research](docs/research)**.
 
+Three systems give the keep its texture: **rarity** (common → mythic notoriety on
+inmates & guards — rarer pays more but is far more volatile), a **danger
+forecast** (honest next-day risk bars that share the event engine's own odds, so
+the warning is real but the dice still roll), and **morality** (a two-sided
+Tyrant ↔ Saint standing where cruelty buys order at the cost of bloodier riots
+and a stained name, while kindness buys reputation at the cost of disrespect and
+escapes).
+
 Full design: **[docs/GAME_DESIGN.md](docs/GAME_DESIGN.md)**.
 
 ## Scripts
@@ -46,7 +54,7 @@ Full design: **[docs/GAME_DESIGN.md](docs/GAME_DESIGN.md)**.
 |---|---|
 | `npm run dev` | Vite dev server with hot reload |
 | `npm run build` | Type-check + production build to `dist/` |
-| `npm test` | Run the 49-test Vitest suite (core logic) |
+| `npm test` | Run the 75-test Vitest suite (core logic) |
 | `npm run smoke` | Headless-Chromium boot test (needs a preview server running) |
 | `npm run verify` | Build → serve → browser smoke-test, end to end |
 | `npm run check` | **typecheck + tests + verify** — the full gate |

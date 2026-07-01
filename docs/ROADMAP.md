@@ -33,6 +33,12 @@ Make it *look* and *feel* shipped.
       (`src/core/decisions.ts`)
 - [x] **Reduced-motion accessibility toggle** (respects OS `prefers-reduced-motion`)
 - [x] **Player-sentiment research** grounding the design ([docs/research](./research))
+- [x] **Rarity system** — common→mythic notoriety axis for inmates & guards,
+      tier-scaled odds (`src/core/rarity.ts`)
+- [x] **Danger forecast** — honest next-day risk bars sharing the event engine's
+      probabilities (`src/core/danger.ts`) — research directive #3
+- [x] **Morality system** — two-sided Tyrant↔Saint standing that cross-couples
+      into unrest, labour, escapes, riots, and reputation (`src/core/morality.ts`)
 - [ ] Real top-down pixel art: tileset, prisoner/guard sprites, cell interiors
       (replace programmatic placeholders — no logic changes needed)
 - [ ] Audio: ambient loop, event stingers, UI clicks (Howler or Phaser audio)
