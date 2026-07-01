@@ -30,9 +30,13 @@ simulation and see what the night brings.
 
 Accept prisoners for daily pay → feed, warm, and keep them sanitary → suppress
 unrest with guards (skill keeps order, brutality kills) → optionally conscript
-inmates into risky labour for resources → survive riots/fires/disease/escapes →
-earn reputation → the crown sends richer, deadlier prisoners. Lose if your
-reputation collapses or you go bankrupt.
+inmates into risky labour for resources → survive fires/disease/escapes and
+**answer riots & bribes with a hard choice** → earn reputation → the crown sends
+richer, deadlier prisoners. Lose if your reputation collapses or you go bankrupt.
+
+Riots and bribes pause the day as **telegraphed trade-off decisions** (crush the
+riot vs. negotiate; pocket the bribe vs. refuse) — the design is grounded in
+real player-sentiment research: **[docs/research](docs/research)**.
 
 Full design: **[docs/GAME_DESIGN.md](docs/GAME_DESIGN.md)**.
 
@@ -42,7 +46,7 @@ Full design: **[docs/GAME_DESIGN.md](docs/GAME_DESIGN.md)**.
 |---|---|
 | `npm run dev` | Vite dev server with hot reload |
 | `npm run build` | Type-check + production build to `dist/` |
-| `npm test` | Run the 36-test Vitest suite (core logic) |
+| `npm test` | Run the 49-test Vitest suite (core logic) |
 | `npm run smoke` | Headless-Chromium boot test (needs a preview server running) |
 | `npm run verify` | Build → serve → browser smoke-test, end to end |
 | `npm run check` | **typecheck + tests + verify** — the full gate |

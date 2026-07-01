@@ -142,10 +142,27 @@ riskier. See [`src/core/events.ts`](../src/core/events.ts).
 | **Disease** | sanitation debt (too few buckets) | Population-wide health loss, deaths |
 | **Escape** | high unrest + too few guards | Inmate flees (rep hit) or is recaptured |
 | **Inspection** | random | Orderly keep → coin + reputation; squalor → fine |
-| **Bribe** | a political/noble inmate present | Coin now, scandal risk to reputation |
 
 Guard **mitigation** (skill + coverage) reduces the harm of riots, fires, and
 escapes — the reason to keep enough well-paid warders.
+
+### Decisions (pause-and-choose) — riot & bribe
+
+The two most consequential events are **not** auto-resolved. They pause the day
+and present the warden a choice with **telegraphed consequences** — the genre's
+most-loved mechanic (Frostpunk's Book of Laws) and the direct antidote to its
+most-hated failure (Reigns' opaque cause-and-effect). See
+[docs/research/DIRECTIVES.md](./research/DIRECTIVES.md).
+
+- **Riot** → *Crush it* (swift, bloody, reputation hit) · *Negotiate* (spend
+  coin, spare lives) · *Let it burn out* (fortune decides).
+- **Bribe** → *Pocket it* (coin now, scandal risk) · *Refuse* (reputation rises)
+  · *Demand double* (greedy gamble).
+
+Effects are deferred to the chosen option and applied deterministically
+(`src/core/decisions.ts`), so outcomes are reproducible given (seed + choices).
+Per design principle, the game **never scolds** the player for a valid choice —
+consequences, not narration, are the verdict.
 
 ---
 
