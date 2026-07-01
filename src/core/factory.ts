@@ -5,6 +5,7 @@
 import { BALANCE } from "./balance";
 import { randomGuardName, randomPrisonerName } from "./names";
 import { guardRarityMods, prisonerRarityMods, rollRarity } from "./rarity";
+import { wardenMods } from "./wardens";
 import type { Rng } from "./rng";
 import type {
   GameState,
@@ -27,10 +28,12 @@ export function createPrisoner(
   severity: Severity,
 ): Prisoner {
   const [minS, maxS] = BALANCE.sentence[severity];
-  const rarity = rollRarity(rng, state.tier);
+  const w = wardenMods(state);
+  const rarity = rollRarity(rng, state.tier, w.rarityTierShift);
   const mods = prisonerRarityMods(rarity);
   // Reputation scales payout from 80% (rep 0) to 130% (rep 100); rarity then
-  // multiplies it — a rare inmate is worth far more to the crown.
+  // multiplies it — a rare inmate is worth far more to the crown. The warden's
+  // reputation for dealmaking (or lack of it) applies last.
   const repScale = 0.8 + (state.reputation / 100) * 0.5;
   return {
     id: mintId(state, "p"),
@@ -42,13 +45,16 @@ export function createPrisoner(
     sentenceDays: rng.int(minS, maxS),
     daysHeld: 0,
     assignment: "none",
-    dailyPayout: Math.round(BALANCE.payout[severity] * repScale * mods.payoutMult),
+    dailyPayout: Math.round(
+      BALANCE.payout[severity] * repScale * mods.payoutMult * w.intakePayMult,
+    ),
     alive: true,
   };
 }
 
 export function createGuard(state: GameState, rng: Rng): Guard {
-  const rarity = rollRarity(rng, state.tier);
+  const w = wardenMods(state);
+  const rarity = rollRarity(rng, state.tier, w.rarityTierShift);
   const mods = guardRarityMods(rarity);
   return {
     id: mintId(state, "g"),
@@ -56,7 +62,7 @@ export function createGuard(state: GameState, rng: Rng): Guard {
     rarity,
     skill: rng.int(mods.skill[0], mods.skill[1]),
     brutality: rng.int(mods.brutality[0], mods.brutality[1]),
-    wage: Math.round(BALANCE.guards.baseWage * mods.wageMult),
+    wage: Math.max(1, Math.round(BALANCE.guards.baseWage * mods.wageMult * w.wageMult)),
     fatigue: 0,
   };
 }
@@ -81,6 +87,8 @@ export function createOffer(
   return {
     prisoner,
     dailyPayout,
-    acceptBounty: Math.round(dailyPayout * BALANCE.intake.bountyMultiplier),
+    acceptBounty: Math.round(
+      dailyPayout * BALANCE.intake.bountyMultiplier * wardenMods(state).bountyMult,
+    ),
   };
 }

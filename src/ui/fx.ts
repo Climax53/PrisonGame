@@ -11,8 +11,24 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import Phaser from "phaser";
+import { Capacitor } from "@capacitor/core";
+import { Haptics, ImpactStyle, NotificationType } from "@capacitor/haptics";
 import { COLORS, FONT } from "./theme";
 import { getSettings } from "./settings";
+
+/** Fire a haptic on device; silently a no-op on the web. */
+function haptic(kind: "light" | "heavy" | "success" | "error"): void {
+  try {
+    if (!Capacitor.isNativePlatform()) return;
+    if (kind === "light") void Haptics.impact({ style: ImpactStyle.Light });
+    else if (kind === "heavy") void Haptics.impact({ style: ImpactStyle.Heavy });
+    else if (kind === "success") {
+      void Haptics.notification({ type: NotificationType.Success });
+    } else void Haptics.notification({ type: NotificationType.Error });
+  } catch {
+    /* haptics are garnish, never a crash */
+  }
+}
 
 export class Juice {
   private scene: Phaser.Scene;
@@ -56,14 +72,17 @@ export class Juice {
     });
   }
 
-  /** Shake the camera. `intensity` ~0.005–0.02. No-op under reduced motion. */
+  /** Shake the camera. `intensity` ~0.005–0.02. No-op under reduced motion
+   * (the haptic still fires — it's feedback, not motion). */
   shake(duration = 300, intensity = 0.01): void {
+    haptic("heavy");
     if (this.reduced) return;
     this.scene.cameras.main.shake(duration, intensity);
   }
 
   /** Flash the screen a colour (e.g. red for a death, gold for reward). */
   flash(color: number, duration = 250): void {
+    haptic(color === COLORS.blood ? "error" : "light");
     if (this.reduced) return;
     const r = (color >> 16) & 0xff;
     const g = (color >> 8) & 0xff;
@@ -142,6 +161,11 @@ export class Juice {
         });
       },
     });
+  }
+
+  /** A celebratory success haptic (achievements, victory). */
+  celebrate(): void {
+    haptic("success");
   }
 
   /** Slide a container in from a horizontal offset (tab change). */

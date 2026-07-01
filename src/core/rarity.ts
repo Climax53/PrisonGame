@@ -16,9 +16,15 @@ export function rarityRank(rarity: Rarity): number {
   return RARITY_ORDER.indexOf(rarity);
 }
 
-/** Weighted random rarity for the given tier. Deterministic via the seeded Rng. */
-export function rollRarity(rng: Rng, tier: WardenTier): Rarity {
-  const weights = BALANCE.rarity.weights[tier];
+const TIER_ORDER: WardenTier[] = ["village", "town", "city", "crown"];
+
+/**
+ * Weighted random rarity for the given tier. `tierShift` rolls as if the keep
+ * stood N tiers higher (the Gambler's talent), capped at crown.
+ */
+export function rollRarity(rng: Rng, tier: WardenTier, tierShift = 0): Rarity {
+  const idx = Math.min(TIER_ORDER.length - 1, Math.max(0, TIER_ORDER.indexOf(tier) + tierShift));
+  const weights = BALANCE.rarity.weights[TIER_ORDER[idx]];
   const total = RARITY_ORDER.reduce((sum, r) => sum + weights[r], 0);
   let roll = rng.range(0, total);
   for (const r of RARITY_ORDER) {

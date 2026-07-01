@@ -19,7 +19,7 @@ decision types, and no reason to start a second run. That's the gap between
 
 ## Tier 0 — launch blockers (the game is not shippable without these)
 
-### 1. Real pixel art (the single biggest gap) — ~2–3 weeks incl. integration
+### 1. Real pixel art — 📋 fully specified in [ART_AUDIO_SPEC.md](ART_AUDIO_SPEC.md); awaiting commissioning
 **Verdict: commission a small pixel-art pack; do not attempt programmer art.**
 Rectangles-with-emoji reads as prototype in the first screenshot — and the
 marketing plan's engines (featuring, short-form, screenshots) are all *visual*.
@@ -32,7 +32,7 @@ Scope, deliberately minimal but complete:
 The UI layer was built for this: severity/rarity colors, cards, and bars stay;
 sprites drop into the existing containers with zero core changes.
 
-### 2. Audio — ~1 week
+### 2. Audio — 📋 fully specified in [ART_AUDIO_SPEC.md](ART_AUDIO_SPEC.md); awaiting sourcing
 Zero sound today; sound is half of "juice." Scope: one ambient medieval loop,
 stingers (riot bell, fire crackle, coin clink, gate slam, quill scratch for
 day-end), UI ticks. Implementation: Phaser audio + a "tap to begin" boot gate
@@ -72,7 +72,7 @@ Two decision kinds is a proof of concept, not a game. Target for launch:
 
 ## Tier 1 — the differentiation layer (first post-launch month, some pre-launch if time allows)
 
-### 6. Unique playable wardens — ~1 week (pre-launch if possible; it's cheap and big)
+### 6. Unique playable wardens — ✅ DONE (7 classes, achievement unlocks, select carousel)
 **Your instinct is validated by the research** (RimWorld storytellers = beloved
 authorship; Reigns replay variety). Six selectable wardens, each a rules
 modifier + portrait + one-line fantasy:
@@ -85,24 +85,24 @@ modifier + portrait + one-line fantasy:
 Unlock by achievement (e.g., Butcher unlocks after a Tyrant loss) — free
 content-as-progression, zero pay-to-win.
 
-### 7. Named story inmates — ~1.5 weeks
+### 7. Named story inmates — ✅ DONE (3 legends with multi-beat arcs)
 Research directive #2 (the genre's #1 emotional driver) + rarity system already
 built for it: legendary/mythic inmates arrive as **named characters with
 3-step mini-arcs** (e.g., the Deposed Prince's escape plot; the Alchemist who
 offers to brew cures; the Bishop whose execution the crown demands). Each is a
 chain of the decision cards from #5 — the systems compose.
 
-### 8. Warden identity & keep customization — ~3 days
+### 8. Warden identity & keep customization — ✅ DONE (names, 8 sigils × 8 banner colors, on HUD/summary)
 The "account customization" ask, scoped to what matters: warden name, keep
 name, heraldry pick (banner color + sigil) shown on the HUD, endings, and the
 share card. Cosmetic keep skins become the IAP-adjacent cosmetics later.
 
-### 9. Pacing modes ("The Crown's Whim") — ~2 days
+### 9. Pacing modes ("The Crown's Whim") — ✅ DONE (slow/steady/chaos, mid-run switchable)
 Research directive #8 (RimWorld storytellers): three modes — Steady / Slow
 Build / Chaos — scaling event frequency & severity, changeable mid-run, no
 penalty. Cheap: it's multipliers over `BALANCE.events`.
 
-### 10. Platform-native polish (also featuring criteria) — ~1 week
+### 10. Platform-native polish — 🟧 haptics DONE; local achievements DONE (Game Center/Play Games wiring at store setup)
 Haptics on riot/fire/decision; Game Center + Play Games achievements
 ("Survive 100 days", "Hold a mythic", "Reach Saint & Tyrant"); leaderboard
 (longest reign). Apple's featuring rubric explicitly rewards native adoption.
@@ -113,10 +113,8 @@ Haptics on riot/fire/decision; Game Center + Play Games achievements
 
 - **Seasons & weather** (winter firewood pressure, summer disease) — recurring
   content beat
-- **Keep upgrades as buildings**: infirmary, chapel, gallows, walls (each a new
-  dial, already in the GDD backlog)
-- **Daily seed challenge** (same seed for everyone, shareable results — the
-  deterministic core makes this nearly free)
+- ~~Keep upgrades as buildings~~ ✅ DONE (infirmary, chapel, gallows, walls)
+- ~~Daily seed challenge~~ ✅ DONE (date-seeded, one attempt/day, fixed loadout)
 - **iCloud/cloud save**, localization (DE/FR/ES/BR-PT/JA — matches the
   marketing plan's store-metadata localization)
 - **"Warden's Pardon" IAP** (~$5): unlocks cosmetic heraldry set + supporter

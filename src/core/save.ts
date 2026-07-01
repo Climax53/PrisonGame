@@ -19,8 +19,9 @@ import { RARITY_ORDER, type GameState, type Rarity } from "./types";
  * v1 — initial release (no morality, no rarity)
  * v2 — adds GameState.morality, Prisoner.rarity, Guard.rarity
  * v3 — adds run-arc fields: stats, crownDays, winterDaysLeft, gameWon, endingId
+ * v4 — adds warden class, identity (names/heraldry), pacing, buildings, legends
  */
-export const SAVE_VERSION = 3;
+export const SAVE_VERSION = 4;
 
 export interface SaveBlob {
   version: number;
@@ -41,6 +42,16 @@ const MIGRATIONS: Record<number, (s: GameState) => void> = {
     s.crownDays ??= 0;
     s.winterDaysLeft ??= 0;
     s.stats ??= emptyStats();
+  },
+  3: (s) => {
+    // v3 → v4: warden class, identity, pacing, buildings, legends.
+    s.warden ??= "steward";
+    s.wardenName ||= "The Warden";
+    s.keepName ||= "the Keep";
+    s.heraldry ??= { color: 0, sigil: "🗝" };
+    s.pacing ??= "steady";
+    s.buildings ??= { infirmary: false, chapel: false, gallows: false, walls: false };
+    s.legendsSeen ??= [];
   },
 };
 
@@ -73,6 +84,20 @@ function repair(s: GameState): GameState | null {
     s.winterDaysLeft = 0;
   }
   if (typeof s.stats !== "object" || s.stats === null) s.stats = emptyStats();
+  const VALID_WARDENS = [
+    "steward", "veteran", "confessor", "butcher", "merchant", "reformer", "gambler",
+  ];
+  if (!VALID_WARDENS.includes(s.warden as string)) s.warden = "steward";
+  if (typeof s.wardenName !== "string" || !s.wardenName) s.wardenName = "The Warden";
+  if (typeof s.keepName !== "string" || !s.keepName) s.keepName = "the Keep";
+  if (typeof s.heraldry !== "object" || s.heraldry === null) {
+    s.heraldry = { color: 0, sigil: "🗝" };
+  }
+  if (!["slow", "steady", "chaos"].includes(s.pacing as string)) s.pacing = "steady";
+  if (typeof s.buildings !== "object" || s.buildings === null) {
+    s.buildings = { infirmary: false, chapel: false, gallows: false, walls: false };
+  }
+  if (!Array.isArray(s.legendsSeen)) s.legendsSeen = [];
   return s;
 }
 

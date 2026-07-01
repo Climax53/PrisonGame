@@ -2,8 +2,29 @@
 
 import { BALANCE } from "./balance";
 import { createGuard, createPrisoner, tierForReputation } from "./factory";
+import { randomHeraldry, randomKeepName, randomWardenName } from "./identity";
 import { Rng } from "./rng";
-import type { GameState, LogEntry, Prisoner, RunStats } from "./types";
+import { wardenDef, wardenMods } from "./wardens";
+import type {
+  GameState,
+  Heraldry,
+  LogEntry,
+  Pacing,
+  Prisoner,
+  RunStats,
+  WardenClass,
+} from "./types";
+
+/** Optional new-game setup (all default sensibly for tests/quick starts). */
+export interface NewGameOptions {
+  warden?: WardenClass;
+  wardenName?: string;
+  keepName?: string;
+  heraldry?: Heraldry;
+  pacing?: Pacing;
+  /** ISO date when this run is a daily challenge. */
+  dailyChallenge?: string;
+}
 
 /** A zeroed statistics block for a fresh run (also used by save repair). */
 export function emptyStats(): RunStats {
@@ -24,7 +45,8 @@ export function emptyStats(): RunStats {
  * reproducible, which is what the test-suite leans on. The Phaser layer passes
  * a time-derived seed at the boundary (outside the core) for variety.
  */
-export function createInitialState(seed: number): GameState {
+export function createInitialState(seed: number, options: NewGameOptions = {}): GameState {
+  const warden = options.warden ?? "steward";
   const s: GameState = {
     day: 1,
     tier: "village",
@@ -47,13 +69,30 @@ export function createInitialState(seed: number): GameState {
     crownDays: 0,
     winterDaysLeft: 0,
     stats: emptyStats(),
+    warden,
+    wardenName: "",
+    keepName: "",
+    heraldry: { color: 0, sigil: "🗝" },
+    pacing: options.pacing ?? "steady",
+    buildings: { infirmary: false, chapel: false, gallows: false, walls: false },
+    legendsSeen: [],
+    dailyChallenge: options.dailyChallenge,
     idCounter: 0,
   };
 
   const rng = new Rng(s.rngState);
 
-  // Seed the keep with one guard and two starter petty criminals.
-  for (let i = 0; i < BALANCE.start.guards; i++) {
+  // Identity: player-chosen or rolled from the seed.
+  s.wardenName = options.wardenName || randomWardenName(rng);
+  s.keepName = options.keepName || randomKeepName(rng);
+  s.heraldry = options.heraldry ?? randomHeraldry(rng);
+
+  // The warden's nature shapes the starting position.
+  const mods = wardenMods(s);
+  s.morality = mods.startMorality;
+
+  // Seed the keep with warders and two starter petty criminals.
+  for (let i = 0; i < BALANCE.start.guards + mods.startBonusGuards; i++) {
     s.guards.push(createGuard(s, rng));
   }
   s.prisoners.push(createPrisoner(s, rng, "petty"));
@@ -61,7 +100,11 @@ export function createInitialState(seed: number): GameState {
 
   s.rngState = rng.state;
   s.tier = tierForReputation(s.reputation);
-  pushLog(s, "You take command of a village lock-up. Keep order. Get paid.", "neutral");
+  pushLog(
+    s,
+    `${s.wardenName}, ${wardenDef(warden).name}, takes command of ${s.keepName}. Keep order. Get paid.`,
+    "neutral",
+  );
   return s;
 }
 

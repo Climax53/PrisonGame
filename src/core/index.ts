@@ -27,6 +27,29 @@ export {
   STORY_KINDS,
 } from "./storyDecisions";
 export { endingFor, pickVictoryEnding, checkVictory, type Ending } from "./endings";
+export { WARDENS, wardenDef, wardenMods, type WardenDef, type WardenMods } from "./wardens";
+export {
+  ACHIEVEMENTS,
+  evaluateAchievements,
+  unlockedWardens,
+  type AchievementDef,
+} from "./achievements";
+export {
+  LEGENDS,
+  legendDef,
+  maybeBrandLegend,
+  dueLegendBeat,
+  resolveLegendBeat,
+} from "./legends";
+export {
+  SIGILS,
+  BANNER_COLORS,
+  randomWardenName,
+  randomKeepName,
+  randomHeraldry,
+} from "./identity";
+export { dangerScale, opportunityScale } from "./danger";
+export { type NewGameOptions } from "./state";
 export {
   createPrisoner,
   createGuard,

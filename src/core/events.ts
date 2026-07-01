@@ -12,7 +12,14 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { BALANCE } from "./balance";
-import { diseaseChance, escapeChance, fireChance, riotChance } from "./danger";
+import {
+  dangerScale,
+  diseaseChance,
+  escapeChance,
+  fireChance,
+  opportunityScale,
+  riotChance,
+} from "./danger";
 import { buildBribeDecision, buildRiotDecision } from "./decisions";
 import { pickStoryDecision } from "./storyDecisions";
 import {
@@ -170,7 +177,7 @@ export function resolveEvents(state: GameState, rng: Rng): EventResolution {
   }
 
   // ── Inspection ───────────────────────────────────────────────────────────
-  if (rng.chance(E.inspection.baseChance)) {
+  if (rng.chance(Math.min(1, E.inspection.baseChance * opportunityScale(state)))) {
     const orderly = avgUnrest < 35 && livingPrisoners(state) <= state.cellCapacity;
     if (orderly) {
       const reward = rng.int(20, 50);
@@ -209,7 +216,7 @@ export function resolveEvents(state: GameState, rng: Rng): EventResolution {
     const wealthy = state.prisoners.filter(
       (p) => p.alive && (p.severity === "political" || p.severity === "noble"),
     );
-    if (wealthy.length > 0 && rng.chance(E.bribe.baseChance)) {
+    if (wealthy.length > 0 && rng.chance(Math.min(1, E.bribe.baseChance * opportunityScale(state)))) {
       const briber = wealthy[rng.int(0, wealthy.length - 1)];
       const purse = rng.int(25, 80);
       decision = buildBribeDecision(state, briber, purse);
@@ -222,7 +229,7 @@ export function resolveEvents(state: GameState, rng: Rng): EventResolution {
   }
 
   // ── Harsh winter ───────────────────────────────────────────────────────────
-  if (state.winterDaysLeft === 0 && rng.chance(E.winter.baseChance)) {
+  if (state.winterDaysLeft === 0 && rng.chance(Math.min(1, E.winter.baseChance * dangerScale(state)))) {
     state.winterDaysLeft = E.winter.durationDays;
     events.push({
       kind: "winter",
@@ -237,7 +244,7 @@ export function resolveEvents(state: GameState, rng: Rng): EventResolution {
   // ── Royal amnesty ──────────────────────────────────────────────────────────
   {
     const petty = state.prisoners.filter((p) => p.alive && p.severity === "petty");
-    if (petty.length > 0 && rng.chance(E.amnesty.baseChance)) {
+    if (petty.length > 0 && rng.chance(Math.min(1, E.amnesty.baseChance * opportunityScale(state)))) {
       for (const p of petty) {
         p.alive = false; // released by decree
         state.stats.totalReleased += 1;
@@ -254,7 +261,7 @@ export function resolveEvents(state: GameState, rng: Rng): EventResolution {
   }
 
   // ── The famous bard ────────────────────────────────────────────────────────
-  if (rng.chance(E.bard.baseChance)) {
+  if (rng.chance(Math.min(1, E.bard.baseChance * opportunityScale(state)))) {
     if (avgUnrest < 35 && living > 0) {
       const gain = rng.int(2, 5);
       state.reputation += gain;
@@ -284,7 +291,7 @@ export function resolveEvents(state: GameState, rng: Rng): EventResolution {
   }
 
   // ── Rat plague ─────────────────────────────────────────────────────────────
-  if (state.resources.food > 10 && rng.chance(E.ratPlague.baseChance)) {
+  if (state.resources.food > 10 && rng.chance(Math.min(1, E.ratPlague.baseChance * dangerScale(state)))) {
     const lost = Math.min(
       state.resources.food,
       Math.max(5, Math.round(state.resources.food * rng.range(0.2, 0.4))),

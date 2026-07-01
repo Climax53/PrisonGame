@@ -54,7 +54,7 @@ Full design: **[docs/GAME_DESIGN.md](docs/GAME_DESIGN.md)**.
 |---|---|
 | `npm run dev` | Vite dev server with hot reload |
 | `npm run build` | Type-check + production build to `dist/` |
-| `npm test` | Run the 117-test Vitest suite (core logic) |
+| `npm test` | Run the 141-test Vitest suite (core logic) |
 | `npm run smoke` | Headless-Chromium boot test (needs a preview server running) |
 | `npm run verify` | Build → serve → browser smoke-test, end to end |
 | `npm run check` | **typecheck + tests + verify** — the full gate |
@@ -101,6 +101,8 @@ Professionalization plans (July 2026):
   market: organic three-engine strategy, budget tiers, 8-week runbook
 - **[docs/RELEASE_PLAN.md](docs/RELEASE_PLAN.md)** — the verified 2026 App
   Store + Google Play submission playbook and timeline
+- **[docs/ART_AUDIO_SPEC.md](docs/ART_AUDIO_SPEC.md)** — the complete art &
+  audio commissioning specification (every still, animation, and sound)
 
 ## Contributing
 

@@ -60,6 +60,10 @@ export interface Prisoner {
   assignment: LaborAssignment;
   /** Coin the government pays per day to hold this inmate (locked at intake). */
   dailyPayout: number;
+  /** Set when this inmate is a named legend with a story arc (legends.ts). */
+  legendId?: string;
+  /** Next arc step awaiting its trigger (index into the legend's steps). */
+  legendStep?: number;
   alive: boolean;
 }
 
@@ -120,7 +124,9 @@ export type EventKind =
   | "magistrateOrder"
   | "starvingVillage"
   | "duel"
-  | "informant";
+  | "informant"
+  // Named-legend arc beats (legends.ts):
+  | "legend";
 
 /** A resolved event, recorded for the player log and outcome math. */
 export interface GameEvent {
@@ -157,7 +163,32 @@ export type DecisionKind =
   | "magistrateOrder"
   | "starvingVillage"
   | "duel"
-  | "informant";
+  | "informant"
+  | "legend"; // a named inmate's story-arc beat (see legends.ts)
+
+/** The playable warden classes. `steward` is the always-unlocked default. */
+export type WardenClass =
+  | "steward"
+  | "veteran"
+  | "confessor"
+  | "butcher"
+  | "merchant"
+  | "reformer"
+  | "gambler";
+
+/** Event-pacing modes — the "Crown's Whim". Changeable mid-run, no penalty. */
+export type Pacing = "slow" | "steady" | "chaos";
+
+/** Purchasable keep buildings, each a permanent strategic dial. */
+export type BuildingId = "infirmary" | "chapel" | "gallows" | "walls";
+
+/** Cosmetic identity shown on the HUD, endings, and the share card. */
+export interface Heraldry {
+  /** Index into the banner-colour palette. */
+  color: number;
+  /** Sigil glyph (from the fixed sigil set). */
+  sigil: string;
+}
 
 /** One selectable response to a pending decision. */
 export interface DecisionOption {
@@ -233,6 +264,20 @@ export interface GameState {
   winterDaysLeft: number;
   /** Lifetime run statistics for endings and the reign summary. */
   stats: RunStats;
+  /** Which warden class rules this run. */
+  warden: WardenClass;
+  /** Player-chosen names + heraldry (cosmetic identity). */
+  wardenName: string;
+  keepName: string;
+  heraldry: Heraldry;
+  /** Event-pacing mode (the Crown's Whim). */
+  pacing: Pacing;
+  /** Keep buildings constructed this run. */
+  buildings: Record<BuildingId, boolean>;
+  /** Legend ids already introduced this run (no repeats). */
+  legendsSeen: string[];
+  /** Set when this run is a daily challenge (the ISO date it belongs to). */
+  dailyChallenge?: string;
   /** Monotonic counter used to mint unique ids without Math.random. */
   idCounter: number;
 }
@@ -246,4 +291,6 @@ export type PlayerAction =
   | { type: "hireGuard" }
   | { type: "fireGuard"; guardId: string }
   | { type: "upgradeCapacity" }
+  | { type: "build"; building: BuildingId }
+  | { type: "setPacing"; pacing: Pacing }
   | { type: "advanceDay" };

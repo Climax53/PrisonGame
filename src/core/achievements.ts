@@ -1,0 +1,118 @@
+// ─────────────────────────────────────────────────────────────────────────────
+// Achievements — earned through play, several unlocking warden classes
+//
+// The evaluator is pure: given the current run state it returns every
+// achievement whose condition holds RIGHT NOW. The UI layer owns persistence
+// (a profile that outlives individual runs) and diffs against what's already
+// unlocked. Nothing here is ever purchasable.
+// ─────────────────────────────────────────────────────────────────────────────
+
+import { rarityRank } from "./rarity";
+import type { GameState } from "./types";
+
+export interface AchievementDef {
+  id: string;
+  title: string;
+  text: string;
+  /** True when the condition holds for this state snapshot. */
+  check(state: GameState): boolean;
+  /** Warden class this achievement unlocks, if any. */
+  unlocksWarden?: string;
+}
+
+export const ACHIEVEMENTS: AchievementDef[] = [
+  {
+    id: "longReign",
+    title: "Long Reign",
+    text: "Rule the keep for 50 days in a single run.",
+    check: (s) => s.day >= 50,
+    unlocksWarden: "veteran",
+  },
+  {
+    id: "goldenLedger",
+    title: "Golden Ledger",
+    text: "Take in 2,000 coin over a single reign.",
+    check: (s) => s.stats.totalCoinEarned >= 2000,
+    unlocksWarden: "merchant",
+  },
+  {
+    id: "liberator",
+    title: "The Liberator",
+    text: "See 15 prisoners walk free in one reign.",
+    check: (s) => s.stats.totalReleased >= 15,
+    unlocksWarden: "reformer",
+  },
+  {
+    id: "saintly",
+    title: "Saintly",
+    text: "Reach the standing of Saint.",
+    check: (s) => s.morality >= 66,
+    unlocksWarden: "confessor",
+  },
+  {
+    id: "feared",
+    title: "Feared",
+    text: "Reach the standing of Tyrant.",
+    check: (s) => s.morality <= -66,
+    unlocksWarden: "butcher",
+  },
+  {
+    id: "mythKeeper",
+    title: "Myth-Keeper",
+    text: "Hold a mythic prisoner in your cells.",
+    check: (s) => s.stats.bestRarityRank >= rarityRank("mythic"),
+    unlocksWarden: "gambler",
+  },
+  {
+    id: "crownKeeper",
+    title: "Keeper of the Crown",
+    text: "Win a reign — hold the crown's trust for 30 days.",
+    check: (s) => !!s.gameWon,
+  },
+  {
+    id: "ironVictory",
+    title: "Iron Victory",
+    text: "Win a reign as a Tyrant.",
+    check: (s) => !!s.gameWon && s.morality <= -33,
+  },
+  {
+    id: "gentleVictory",
+    title: "Gentle Victory",
+    text: "Win a reign as a Saint.",
+    check: (s) => !!s.gameWon && s.morality >= 33,
+  },
+  {
+    id: "stormWeathered",
+    title: "Storm-Weathered",
+    text: "Face 3 riots in a single reign and still stand.",
+    check: (s) => s.stats.riotsFaced >= 3 && !s.gameOver,
+  },
+  {
+    id: "fullHouse",
+    title: "Full House",
+    text: "Hold 12 prisoners at once.",
+    check: (s) => s.prisoners.filter((p) => p.alive).length >= 12,
+  },
+  {
+    id: "architect",
+    title: "The Architect",
+    text: "Raise all four keep buildings in one reign.",
+    check: (s) =>
+      s.buildings.infirmary && s.buildings.chapel && s.buildings.gallows && s.buildings.walls,
+  },
+];
+
+/** Ids of achievements whose conditions hold for this state snapshot. */
+export function evaluateAchievements(state: GameState): string[] {
+  return ACHIEVEMENTS.filter((a) => a.check(state)).map((a) => a.id);
+}
+
+/** Warden classes unlocked by a set of achievement ids ("steward" is free). */
+export function unlockedWardens(achievementIds: readonly string[]): string[] {
+  const set = new Set(achievementIds);
+  const unlocked = ["steward"];
+  for (const a of ACHIEVEMENTS) {
+    if (a.unlocksWarden && set.has(a.id)) unlocked.push(a.unlocksWarden);
+  }
+  return unlocked;
+}

@@ -12,7 +12,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { BALANCE } from "./balance";
-import { riotChance } from "./danger";
+import { opportunityScale, riotChance } from "./danger";
 import { adjustMorality, repGainMultiplier } from "./morality";
 import type { Rng } from "./rng";
 import { livingPrisoners, pushLog } from "./state";
@@ -524,7 +524,8 @@ export const STORY_KINDS: DecisionKind[] = DECK.map((c) => c.kind);
  * riot/bribe already claimed the day. Deterministic given the RNG cursor.
  */
 export function pickStoryDecision(state: GameState, rng: Rng): PendingDecision | undefined {
-  if (!rng.chance(BALANCE.events.storyDecision.baseChance)) return undefined;
+  const chance = Math.min(1, BALANCE.events.storyDecision.baseChance * opportunityScale(state));
+  if (!rng.chance(chance)) return undefined;
   const eligible = DECK.filter((c) => c.eligible(state));
   if (eligible.length === 0) return undefined;
   const card = eligible[rng.int(0, eligible.length - 1)];

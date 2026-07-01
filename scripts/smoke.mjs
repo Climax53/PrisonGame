@@ -72,6 +72,9 @@ const systems = await page.evaluate(() => {
     prisonersHaveRarity:
       s.prisoners.length === 0 || s.prisoners.every((p) => typeof p.rarity === "string"),
     guardsHaveRarity: s.guards.every((g) => typeof g.rarity === "string"),
+    wardenLive: typeof s.warden === "string" && typeof s.keepName === "string",
+    buildingsLive: typeof s.buildings === "object" && s.buildings !== null,
+    pacingLive: ["slow", "steady", "chaos"].includes(s.pacing),
   };
 });
 
@@ -196,6 +199,14 @@ const victory = await page.evaluate(() => ({
 await page.waitForTimeout(300);
 await page.screenshot({ path: "scripts/screenshot-victory.png" });
 
+// ── New-reign setup screen: open it over the summary and require it to render.
+await page.evaluate(() => scene().openSetup(true));
+await page.waitForTimeout(300);
+const setupShown = await page.evaluate(() =>
+  scene().children.list.some((c) => c.depth === 860 && c.length > 0),
+);
+await page.screenshot({ path: "scripts/screenshot-setup.png" });
+
 // ── Onboarding: wipe storage and load with ?onboard=1 (disables the settings
 // bypass above; a query change forces a real document load) — the tour must appear.
 await page.evaluate(() => localStorage.clear());
@@ -237,6 +248,10 @@ assert(migratedPlayable, "migrated legacy save plays a day without corruption");
 assert(victory.won, `holding crown 30 days wins the run (ending: ${victory.endingId})`);
 assert(victory.statsShown, "reign statistics are tracked for the summary");
 assert(onboardingShown, "first-run onboarding tour appears for a fresh warden");
+assert(systems.wardenLive, "warden identity system is live");
+assert(systems.buildingsLive, "keep buildings system is live");
+assert(systems.pacingLive, "pacing (Crown's Whim) is live");
+assert(setupShown, "the new-reign setup screen renders");
 console.log(`screenshots → ${SHOT_PLAY}, ${SHOT_MODAL}, victory, onboarding`);
 
 process.exit(failed ? 1 : 0);

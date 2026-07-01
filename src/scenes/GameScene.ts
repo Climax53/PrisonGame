@@ -27,11 +27,14 @@ import {
   type Prisoner,
 } from "../core";
 import { runOnboarding } from "../ui/onboarding";
+import { runSetup, type SetupResult } from "../ui/setup";
+import { getProfile, hydrateProfile, recordProgress } from "../ui/profile";
 import { COLORS, DANGER_COLOR, FONT, VIEW } from "../ui/theme";
 import { makeBar, makeButton, makePanel } from "../ui/widgets";
 import { loadGameAsync, saveGame } from "../ui/save";
 import { Juice } from "../ui/fx";
 import { getSettings, updateSettings } from "../ui/settings";
+import { ACHIEVEMENTS, BANNER_COLORS, wardenDef } from "../core";
 
 /** A resource/reputation snapshot used to animate deltas between renders. */
 interface Vitals {
@@ -96,6 +99,7 @@ export class GameScene extends Phaser.Scene {
    * (here, not in the core) so the core stays deterministic for tests.
    */
   private async bootstrap(): Promise<void> {
+    await hydrateProfile();
     const saved = await loadGameAsync();
     this.state = saved ?? createInitialState(this.makeSeed());
     this.displayed = { coin: this.state.resources.coin, reputation: this.state.reputation };
@@ -103,6 +107,40 @@ export class GameScene extends Phaser.Scene {
     // First-ever run: give the new warden the five-step tour (skippable).
     if (!saved && !getSettings().hasOnboarded) {
       runOnboarding(this, () => this.renderAll());
+    }
+  }
+
+  /** Open the new-reign setup (warden select, identity, pacing, daily). */
+  private openSetup(cancellable: boolean): void {
+    runSetup(
+      this,
+      (result: SetupResult) => this.startNewReign(result),
+      cancellable ? () => this.renderAll() : undefined,
+    );
+  }
+
+  private startNewReign(result: SetupResult): void {
+    this.state = createInitialState(result.seed, result.options);
+    this.activeTab = "keep";
+    this.rosterPage = 0;
+    this.confirmDismissId = null;
+    this.displayed = { coin: this.state.resources.coin, reputation: this.state.reputation };
+    this.persist();
+    this.renderAll();
+  }
+
+  /** Evaluate achievements and toast anything newly earned. */
+  private toastAchievements(): void {
+    const fresh = recordProgress(this.state);
+    if (fresh.length === 0) return;
+    this.juice.celebrate();
+    const defs = fresh
+      .map((id) => ACHIEVEMENTS.find((a) => a.id === id))
+      .filter(Boolean);
+    const first = defs[0];
+    if (first) {
+      const extra = defs.length > 1 ? ` (+${defs.length - 1} more)` : "";
+      this.toast(`🏆 Achievement: ${first.title}${extra}`, COLORS.goldCss);
     }
   }
 
@@ -139,11 +177,19 @@ export class GameScene extends Phaser.Scene {
       .setStrokeStyle(2, COLORS.gold, 0.5);
     this.hud.add(banner);
 
-    const title = this.add.text(16, 12, `⚜ Warden's Keep`, {
+    const bannerColor = BANNER_COLORS[s.heraldry?.color ?? 0] ?? COLORS.gold;
+    const title = this.add.text(16, 12, `${s.heraldry?.sigil ?? "⚜"} ${s.keepName || "Warden's Keep"}`, {
       fontFamily: FONT.family,
-      fontSize: "26px",
-      color: COLORS.goldCss,
+      fontSize: "24px",
+      color: `#${bannerColor.toString(16).padStart(6, "0")}`,
     });
+    this.hud.add(
+      this.add.text(18, 40, `${s.wardenName} — ${wardenDef(s.warden).name}${s.dailyChallenge ? "  •  📅 daily" : ""}`, {
+        fontFamily: FONT.family,
+        fontSize: "13px",
+        color: COLORS.neutralCss,
+      }),
+    );
     const tierLabel = this.add
       .text(VIEW.width - 58, 16, `${tierTitle(s.tier)}  •  Day ${s.day}`, {
         fontFamily: FONT.family,
@@ -171,7 +217,7 @@ export class GameScene extends Phaser.Scene {
       );
     }
 
-    // Settings gear — toggles reduced motion (accessibility).
+    // Settings gear — opens the settings/achievements sheet.
     this.hud.add(
       makeButton(this, {
         x: VIEW.width - 48,
@@ -181,11 +227,7 @@ export class GameScene extends Phaser.Scene {
         label: "⚙",
         fontSize: 22,
         fill: COLORS.panelLight,
-        onTap: () => {
-          const next = !getSettings().reducedMotion;
-          updateSettings({ reducedMotion: next });
-          this.toast(`Reduced motion: ${next ? "ON" : "OFF"}`, COLORS.goldCss);
-        },
+        onTap: () => this.openSettings(),
       }),
     );
 
@@ -630,21 +672,21 @@ export class GameScene extends Phaser.Scene {
       y += 80;
     };
 
-    row("Buy 10 Food", costs.buyResource("food", 10), () =>
+    row("Buy 10 Food", costs.buyResource("food", 10, s), () =>
       this.doAction({ type: "buyResource", resource: "food", amount: 10 }, "market"),
-      s.resources.coin >= costs.buyResource("food", 10),
+      s.resources.coin >= costs.buyResource("food", 10, s),
     );
-    row("Buy 10 Firewood", costs.buyResource("firewood", 10), () =>
+    row("Buy 10 Firewood", costs.buyResource("firewood", 10, s), () =>
       this.doAction({ type: "buyResource", resource: "firewood", amount: 10 }, "market"),
-      s.resources.coin >= costs.buyResource("firewood", 10),
+      s.resources.coin >= costs.buyResource("firewood", 10, s),
     );
-    row("Buy 2 Buckets", costs.buyResource("buckets", 2), () =>
+    row("Buy 2 Buckets", costs.buyResource("buckets", 2, s), () =>
       this.doAction({ type: "buyResource", resource: "buckets", amount: 2 }, "market"),
-      s.resources.coin >= costs.buyResource("buckets", 2),
+      s.resources.coin >= costs.buyResource("buckets", 2, s),
     );
-    row(`Hire Warder`, costs.hireGuard(), () =>
+    row(`Hire Warder`, costs.hireGuard(s), () =>
       this.doAction({ type: "hireGuard" }, "market"),
-      s.resources.coin >= costs.hireGuard(),
+      s.resources.coin >= costs.hireGuard(s),
     );
     row(
       `Expand Cells (+2 → ${s.cellCapacity + 2})`,
@@ -652,6 +694,42 @@ export class GameScene extends Phaser.Scene {
       () => this.doAction({ type: "upgradeCapacity" }, "market"),
       s.resources.coin >= costs.upgradeCapacity(s),
     );
+
+    // Keep buildings — one-time constructions, each a permanent dial.
+    const BUILDING_ROWS: Array<[Parameters<typeof costs.build>[0], string, string]> = [
+      ["infirmary", "🏥 Infirmary", "heals every inmate daily"],
+      ["chapel", "⛪ Chapel", "calms the cells daily"],
+      ["gallows", "🪢 Gallows", "fear: quiet cells, fewer escapes — hardens your soul"],
+      ["walls", "🧱 High Walls", "halves escape attempts"],
+    ];
+    for (const [id, label, hint] of BUILDING_ROWS) {
+      const built = s.buildings[id];
+      const cost = costs.build(id, s);
+      const panel2 = makePanel(this, 16, y, VIEW.width - 32, 70);
+      panel2.add(
+        this.add.text(16, 12, label + (built ? "  ✓ built" : ""), {
+          fontFamily: FONT.family, fontSize: "18px",
+          color: built ? COLORS.goodCss : COLORS.parchmentCss,
+        }),
+      );
+      panel2.add(
+        this.add.text(16, 38, hint, {
+          fontFamily: FONT.family, fontSize: "13px", color: COLORS.neutralCss,
+        }),
+      );
+      if (!built) {
+        panel2.add(
+          makeButton(this, {
+            x: VIEW.width - 32 - 150, y: 11, width: 138, height: 48,
+            label: `${cost} 🪙`, fontSize: 18,
+            enabled: s.resources.coin >= cost,
+            onTap: () => this.doAction({ type: "build", building: id }, "market"),
+          }),
+        );
+      }
+      this.content.add(panel2);
+      y += 80;
+    }
 
     // Guard roster with dismissal (two-tap confirm — destructive action).
     const shown = s.guards.slice(0, 5);
@@ -778,6 +856,9 @@ export class GameScene extends Phaser.Scene {
       const head = this.state.lastEvents[0];
       if (head) this.toast(head.message, head.deaths > 0 ? COLORS.badCss : COLORS.goldCss);
     }
+
+    // Achievements land after the day's news has had its moment.
+    this.time.delayedCall(2600, () => this.toastAchievements());
   }
 
   private doAction(action: Parameters<typeof applyAction>[1], _tab: Tab): void {
@@ -797,6 +878,97 @@ export class GameScene extends Phaser.Scene {
         coinDelta > 0 ? COLORS.goldCss : COLORS.bloodCss,
       );
     }
+  }
+
+  // ── Settings & achievements sheet ──────────────────────────────────────────
+  private openSettings(): void {
+    const layer = this.add.container(0, 0).setDepth(870);
+    const close = () => {
+      layer.destroy();
+      this.renderAll();
+    };
+    const render = () => {
+      layer.removeAll(true);
+      layer.add(
+        this.add
+          .rectangle(0, 0, VIEW.width, VIEW.height, COLORS.shadow, 0.9)
+          .setOrigin(0, 0)
+          .setInteractive(),
+      );
+      const w = VIEW.width - 64;
+      const panel = makePanel(this, 32, 60, w, VIEW.height - 160, "⚙ The Warden's Desk");
+
+      // Reduced motion toggle.
+      const rm = getSettings().reducedMotion;
+      panel.add(
+        this.add.text(16, 44, "Reduced motion", {
+          fontFamily: FONT.family, fontSize: "18px", color: COLORS.parchmentCss,
+        }),
+      );
+      panel.add(
+        makeButton(this, {
+          x: w - 116, y: 36, width: 100, height: 40,
+          label: rm ? "ON" : "OFF", fontSize: 16,
+          fill: rm ? COLORS.gold : COLORS.panelLight,
+          textColor: rm ? COLORS.inkCss : COLORS.parchmentCss,
+          onTap: () => {
+            updateSettings({ reducedMotion: !rm });
+            render();
+          },
+        }),
+      );
+
+      // Achievements ledger.
+      const profile = getProfile();
+      panel.add(
+        this.add.text(16, 96, `🏆 Deeds  (${profile.achievements.length}/${ACHIEVEMENTS.length})`, {
+          fontFamily: FONT.family, fontSize: "18px", color: COLORS.goldCss,
+        }),
+      );
+      ACHIEVEMENTS.forEach((a, i) => {
+        const earned = profile.achievements.includes(a.id);
+        const y = 128 + i * 44;
+        panel.add(
+          this.add.text(16, y, `${earned ? "✓" : "·"} ${a.title}`, {
+            fontFamily: FONT.family, fontSize: "15px",
+            color: earned ? COLORS.goodCss : COLORS.neutralCss,
+          }),
+        );
+        panel.add(
+          this.add.text(32, y + 18, earned && a.unlocksWarden ? `${a.text}  → unlocked ${a.unlocksWarden}` : a.text, {
+            fontFamily: FONT.family, fontSize: "12px", color: COLORS.neutralCss,
+          }),
+        );
+      });
+
+      const bottomY = 128 + ACHIEVEMENTS.length * 44 + 12;
+      panel.add(
+        this.add.text(16, bottomY, `Reigns: ${profile.runsCompleted}  •  Victories: ${profile.runsWon}  •  Longest: ${profile.bestReign}d`, {
+          fontFamily: FONT.family, fontSize: "13px", color: COLORS.neutralCss,
+        }),
+      );
+
+      panel.add(
+        makeButton(this, {
+          x: 16, y: bottomY + 32, width: (w - 44) / 2, height: 52,
+          label: "⚜ A New Reign", fontSize: 17,
+          fill: COLORS.blood,
+          onTap: () => {
+            layer.destroy();
+            this.openSetup(true);
+          },
+        }),
+      );
+      panel.add(
+        makeButton(this, {
+          x: 16 + (w - 44) / 2 + 12, y: bottomY + 32, width: (w - 44) / 2, height: 52,
+          label: "Close", fontSize: 17,
+          onTap: close,
+        }),
+      );
+      layer.add(panel);
+    };
+    render();
   }
 
   // ── Decision modal ─────────────────────────────────────────────────────────
@@ -902,6 +1074,8 @@ export class GameScene extends Phaser.Scene {
           coinDelta > 0 ? COLORS.goldCss : COLORS.bloodCss,
         );
       }
+      // A decision can end the run (or earn a deed) on the spot.
+      this.time.delayedCall(2600, () => this.toastAchievements());
     }
   }
 
@@ -989,14 +1163,7 @@ export class GameScene extends Phaser.Scene {
         fontSize: 22,
         fill: COLORS.gold,
         textColor: COLORS.inkCss,
-        onTap: () => {
-          this.state = createInitialState(this.makeSeed());
-          this.activeTab = "keep";
-          this.rosterPage = 0;
-          this.confirmDismissId = null;
-          this.persist();
-          this.renderAll();
-        },
+        onTap: () => this.openSetup(true),
       }),
     );
   }

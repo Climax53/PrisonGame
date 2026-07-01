@@ -98,6 +98,28 @@ export const BALANCE = {
     crownDaysRequired: 30,
   },
 
+  /** Keep buildings: one-time purchases, each a permanent strategic dial. */
+  buildings: {
+    infirmary: { cost: 200, healPerDay: 6 },
+    chapel: { cost: 180, unrestPerDay: 3 },
+    /** The gallows rules by fear: quiets cells, deters escapes, hardens the soul. */
+    gallows: { cost: 150, unrestPerDay: 2, escapeMult: 0.85, moralityDriftPerDay: 0.15 },
+    walls: { cost: 250, escapeMult: 0.5 },
+  },
+
+  /** The Crown's Whim — event-pacing multipliers (changeable mid-run, no penalty). */
+  pacing: {
+    slow: { danger: 0.7, opportunity: 0.85 },
+    steady: { danger: 1.0, opportunity: 1.0 },
+    chaos: { danger: 1.35, opportunity: 1.25 },
+  },
+
+  /** Named legend inmates (see legends.ts). */
+  legends: {
+    /** Chance a legendary/mythic political-or-noble offer is a named legend. */
+    offerChance: 0.6,
+  },
+
   reputation: {
     /** Reputation gained per prisoner successfully released at end of sentence. */
     perRelease: 2,

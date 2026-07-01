@@ -137,7 +137,7 @@ describe("victory & endings", () => {
 
   it("loss endings carry themed ids and endingFor resolves them", () => {
     const s = createInitialState(5);
-    s.reputation = 0;
+    s.reputation = 3;
     advanceDayUntilOver(s);
     expect(s.endingId).toBe("disgraced");
     const e = endingFor(s);
@@ -158,7 +158,10 @@ describe("victory & endings", () => {
 });
 
 function advanceDayUntilOver(s: GameState): void {
-  for (let i = 0; i < 10 && !s.gameOver; i++) {
+  // Starve and freeze the keep so collapse is certain, not seed-lucky.
+  for (let i = 0; i < 60 && !s.gameOver; i++) {
+    s.resources.food = 0;
+    s.resources.firewood = 0;
     advanceDay(s);
     if (s.pendingDecision) applyDecision(s, s.pendingDecision.options[0].id);
   }

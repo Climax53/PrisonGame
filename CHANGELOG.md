@@ -1,5 +1,46 @@
 # Changelog
 
+## Unreleased — "Wardens, Legends & the Crown's Whim" cycle (Tiers 1–2)
+
+### Added
+- **Seven playable wardens** (`src/core/wardens.ts`): Steward (default),
+  Veteran, Confessor, Butcher, Merchant, Reformer, Gambler — each a bundle of
+  pure rule modifiers (prices, wages, intake pay, reputation, labour, crush
+  toll, rarity odds, danger/opportunity heat, starting morality/guards).
+  All earned through play; nothing sold.
+- **Achievements** (`src/core/achievements.ts`): 12 deeds evaluated against
+  live state; six unlock warden classes. Cross-run profile persistence
+  (`src/ui/profile.ts`, mirrored to native storage) with toasts on earn.
+- **Named legends** (`src/core/legends.ts`): Prince Alaric the Deposed,
+  Mirabel the Alchemist, Bishop Odo — legendary/mythic arrivals with
+  multi-beat story arcs (ransoms, escape plots, royal writs), each at most
+  once per run, resolved through the decision modal.
+- **Keep buildings**: infirmary (daily healing), chapel (daily calm), gallows
+  (fear: quiet + fewer escapes, hardens the soul), high walls (halves escape
+  risk — the danger forecast reflects it, single source of truth). One-time
+  purchases in the Market.
+- **The Crown's Whim** pacing modes: slow / steady / chaos scaling danger and
+  opportunity odds; switchable mid-run with no penalty.
+- **Warden & keep identity**: names (rollable), 8 sigils × 8 banner colours,
+  shown on the HUD, endings, and the shareable summary.
+- **Daily challenge**: date-seeded run (same seed for every player — the
+  deterministic core makes this free), fixed loadout, one attempt per day.
+- **New-reign setup screen**: warden carousel with unlock hints, identity
+  forge, pacing pick, daily-challenge entry; reachable from game over and the
+  new settings sheet ("The Warden's Desk": reduced motion, deeds ledger,
+  profile stats, new reign).
+- **Haptics** (`@capacitor/haptics`): impacts on shakes/flashes, success
+  notification on achievements/victory; no-op on web.
+- **Art & audio commissioning spec** (`docs/ART_AUDIO_SPEC.md`): every still,
+  animation, and sound with dimensions, frame counts, formats, priorities,
+  and indicative budgets.
+
+### Changed
+- Save format v5-ready: v4 migration (warden/identity/pacing/buildings/
+  legends) with repair defaults; older saves keep migrating cleanly.
+- Tests 117 → 141; browser smoke now proves warden/buildings/pacing systems
+  live and renders the setup screen (20 assertions).
+
 ## Unreleased — "Run Arc & Story Deck" cycle (Tier 0 content)
 
 ### Added

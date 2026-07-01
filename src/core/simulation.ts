@@ -19,6 +19,8 @@ import {
 } from "./morality";
 import { prisonerRarityMods, rarityRank } from "./rarity";
 import { checkVictory } from "./endings";
+import { dueLegendBeat, maybeBrandLegend } from "./legends";
+import { wardenMods } from "./wardens";
 import { Rng } from "./rng";
 import {
   averageBrutality,
@@ -33,9 +35,11 @@ import { clamp, round1 } from "./util";
 const R = BALANCE.reputation;
 const MOR = BALANCE.morality;
 
-/** Apply reputation change and keep it inside [min,max]. */
+/** Apply reputation change and keep it inside [min,max]. Positive gains are
+ * scaled by the warden's nature (the Merchant is trusted slowly, etc.). */
 function adjustReputation(state: GameState, delta: number): void {
-  state.reputation = clamp(state.reputation + delta, R.min, R.max);
+  const scaled = delta > 0 ? delta * wardenMods(state).repGainMult : delta;
+  state.reputation = clamp(state.reputation + scaled, R.min, R.max);
 }
 
 /** Government income: paid per living prisoner per day. */
@@ -75,8 +79,9 @@ function payWages(state: GameState): void {
 
 /** Conscripted labour produces resources, but costs unrest and risks injury. */
 function runLabor(state: GameState, rng: Rng): void {
-  // A cruel warden works inmates harder; a kind one lets them slack.
-  const moraleMult = laborMultiplier(state);
+  // A cruel warden works inmates harder; a kind one lets them slack — and the
+  // warden's own doctrine (Reformer) shapes output too.
+  const moraleMult = laborMultiplier(state) * wardenMods(state).laborMult;
   for (const p of state.prisoners) {
     if (!p.alive || p.assignment === "none") continue;
     const job = BALANCE.labor[p.assignment];
@@ -166,6 +171,27 @@ function updateUnrest(state: GameState): void {
   }
 }
 
+/** Daily effects of the keep's buildings. */
+function runBuildings(state: GameState): void {
+  const B = BALANCE.buildings;
+  for (const p of state.prisoners) {
+    if (!p.alive) continue;
+    if (state.buildings.infirmary) {
+      p.health = clamp(p.health + B.infirmary.healPerDay, 0, 100);
+    }
+    if (state.buildings.chapel) {
+      p.unrest = clamp(p.unrest - B.chapel.unrestPerDay, 0, 100);
+    }
+    if (state.buildings.gallows) {
+      p.unrest = clamp(p.unrest - B.gallows.unrestPerDay, 0, 100);
+    }
+  }
+  // A standing gallows rules by fear — and fear is habit-forming.
+  if (state.buildings.gallows) {
+    adjustMorality(state, -B.gallows.moralityDriftPerDay);
+  }
+}
+
 /**
  * Brutal warders keep order through fear, but the brutal hand sometimes kills.
  * Returns the number of prisoners beaten to death this day.
@@ -214,9 +240,13 @@ function releaseServed(state: GameState): number {
       p.alive = false; // leaves the keep
       released++;
       state.stats.totalReleased += 1;
-      // Freeing a notorious inmate on good terms is a bigger reputation win.
+      // Freeing a notorious inmate on good terms is a bigger reputation win —
+      // and the Reformer has built a career on it.
       const swing = prisonerRarityMods(p.rarity).repSwingMult;
-      adjustReputation(state, R.perRelease * swing * gainMult);
+      adjustReputation(
+        state,
+        R.perRelease * swing * gainMult * wardenMods(state).releaseRepMult,
+      );
       adjustMorality(state, MOR.perRelease);
       pushLog(state, `${p.name} has served their sentence and is freed.`, "good");
     }
@@ -230,7 +260,11 @@ function generateOffers(state: GameState, rng: Rng): void {
   const pool = BALANCE.tierIntake[state.tier];
   for (let i = 0; i < BALANCE.intake.offersPerDay; i++) {
     const severity = (rng.pick(pool) ?? "petty") as Severity;
-    state.offers.push(createOffer(state, rng, severity));
+    const offer = createOffer(state, rng, severity);
+    // A legendary/mythic political or noble arrival may be a named LEGEND with
+    // a story arc (at most once each per run).
+    maybeBrandLegend(state, rng, offer.prisoner);
+    state.offers.push(offer);
   }
 }
 
@@ -266,16 +300,28 @@ export function advanceDay(state: GameState): GameState {
   consumeFirewood(state);
   updateUnrest(state);
 
+  runBuildings(state);
+
   const preDeaths =
     resolveHealthDeaths(state) + brutalityCasualties(state, rng);
-  // A cruel warden is judged a butcher; a kind one is given the benefit of doubt.
+  // A cruel warden is judged a butcher; a kind one the benefit of doubt — and
+  // some wardens (the Butcher) are judged more harshly still.
   if (preDeaths > 0) {
-    adjustReputation(state, -preDeaths * R.perDeath * deathReputationMultiplier(state));
+    adjustReputation(
+      state,
+      -preDeaths * R.perDeath * deathReputationMultiplier(state) * wardenMods(state).deathRepMult,
+    );
   }
 
   const { events, decision } = resolveEvents(state, rng);
   state.lastEvents = events;
   if (decision) state.pendingDecision = decision;
+
+  // A held legend's story beat claims the day if nothing else did.
+  if (!state.pendingDecision) {
+    const beat = dueLegendBeat(state);
+    if (beat) state.pendingDecision = beat;
+  }
 
   const released = releaseServed(state);
 

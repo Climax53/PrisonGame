@@ -15,8 +15,10 @@ import { BALANCE } from "./balance";
 import { adjustMorality, deathReputationMultiplier } from "./morality";
 import type { Rng } from "./rng";
 import { Rng as RngClass } from "./rng";
+import { resolveLegendBeat } from "./legends";
 import { resolveStoryDecision } from "./storyDecisions";
 import { evaluateGameOver, killWeakestPrisoners, pushLog } from "./state";
+import { wardenMods } from "./wardens";
 import type { GameEvent, GameState, PendingDecision, Prisoner } from "./types";
 import { clamp } from "./util";
 
@@ -124,6 +126,9 @@ export function applyDecision(
     outcome = resolveRiot(state, rng, optionId, decision);
   } else if (decision.kind === "bribe") {
     outcome = resolveBribe(state, rng, optionId, decision);
+  } else if (decision.kind === "legend") {
+    const beat = resolveLegendBeat(state, rng, optionId, decision);
+    outcome = beat ?? { ok: false, error: "Unknown legend." };
   } else {
     const story = resolveStoryDecision(state, rng, optionId, decision);
     outcome = story ?? { ok: false, error: "Unknown decision." };
@@ -176,9 +181,11 @@ function resolveRiot(
   }
 
   if (optionId === "crush") {
-    // Ordering the clubs out is a cruel act, whatever the result.
+    // Ordering the clubs out is a cruel act, whatever the result. A practiced
+    // hand (the Butcher) crushes with fewer deaths.
     adjustMorality(state, -MOR.perCrush);
-    const deaths = killWeakestPrisoners(state, Math.round(potential), rng).length;
+    const toll = Math.round(potential * wardenMods(state).crushTollMult);
+    const deaths = killWeakestPrisoners(state, toll, rng).length;
     ventUnrest(state, 35);
     // Bloodshed plus a brutality scandal, amplified if you're already a butcher.
     adjustReputation(state, -(deaths * R.perDeath * deathReputationMultiplier(state) + 3));
