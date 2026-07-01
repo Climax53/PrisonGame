@@ -17,6 +17,10 @@ npm install
 npm run dev          # open the printed localhost URL in a browser
 ```
 
+📱 **No computer handy?** You can playtest the real game on your phone with zero
+local setup — see **[docs/TESTING_ON_PHONE.md](docs/TESTING_ON_PHONE.md)**
+(browser via GitHub Pages, or a downloadable Android APK).
+
 Tabs: **🏰 Keep** (inmates — tap a card to assign labour) · **📜 Offers**
 (accept/decline prisoners the government sends) · **⚒ Market** (buy food,
 firewood, buckets; hire warders; expand cells). Press **End Day** to run the

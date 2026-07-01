@@ -20,8 +20,10 @@
     "phaser": "^3.80.1"
   },
   "devDependencies": {
+    "@capacitor/android": "^6.2.1",
     "@capacitor/cli": "^6.1.2",
     "@capacitor/core": "^6.1.2",
+    "@capacitor/ios": "^6.2.1",
     "playwright": "^1.61.1",
     "typescript": "^5.5.4",
     "vite": "^5.4.8",
