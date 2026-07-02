@@ -87,9 +87,30 @@ the economy can be re-balanced without touching logic.
 
 ## 4. Prisoners
 
-Each inmate has: **severity**, **health** (0–100, death at 0), **unrest**
-(0–100, fuels riots/escapes), **sentence** (days remaining → release on 0), and
-a **labour assignment**.
+Each inmate has: **severity**, **rarity**, **health** (0–100, death at 0),
+**unrest** (0–100, fuels riots/escapes), **sentence** (days remaining → release
+on 0), and a **labour assignment**.
+
+### Rarity — the notoriety axis (`src/core/rarity.ts`)
+
+Orthogonal to crime severity, every inmate and guard carries a rarity:
+**common → uncommon → rare → epic → legendary → mythic**. It's a high-risk /
+high-reward and progression dial:
+
+| Rarity | Prisoner: pay | labour | unrest | escape cunning | Guard: skill | wage |
+|---|---|---|---|---|---|---|
+| common | ×1.0 | ×1.0 | ×1.0 | ×1.0 | 20–45 | ×1.0 |
+| uncommon | ×1.35 | ×1.05 | ×1.1 | ×1.1 | 30–55 | ×1.2 |
+| rare | ×1.8 | ×1.1 | ×1.25 | ×1.3 | 42–68 | ×1.45 |
+| epic | ×2.4 | ×1.15 | ×1.45 | ×1.6 | 55–80 | ×1.8 |
+| legendary | ×3.2 | ×1.2 | ×1.7 | ×2.0 | 68–90 | ×2.3 |
+| mythic | ×4.5 | ×1.25 | ×2.0 | ×2.5 | 82–99 | ×3.0 |
+
+A mythic inmate is a fortune in daily pay and works a touch harder — but is
+wildly volatile, escapes cunningly, and losing one is a headline scandal
+(reputation swing scales with rarity). **Rarity odds improve with your tier**
+(a village sees only common/uncommon; the crown surfaces legendaries and
+mythics), giving a collection/progression hook on top of the reputation ladder.
 
 | Severity | Daily pay (base) | Unrest pressure | Sentence | Sent at tier |
 |---|---|---|---|---|
@@ -142,10 +163,63 @@ riskier. See [`src/core/events.ts`](../src/core/events.ts).
 | **Disease** | sanitation debt (too few buckets) | Population-wide health loss, deaths |
 | **Escape** | high unrest + too few guards | Inmate flees (rep hit) or is recaptured |
 | **Inspection** | random | Orderly keep → coin + reputation; squalor → fine |
-| **Bribe** | a political/noble inmate present | Coin now, scandal risk to reputation |
 
 Guard **mitigation** (skill + coverage) reduces the harm of riots, fires, and
 escapes — the reason to keep enough well-paid warders.
+
+### Decisions (pause-and-choose) — riot & bribe
+
+The two most consequential events are **not** auto-resolved. They pause the day
+and present the warden a choice with **telegraphed consequences** — the genre's
+most-loved mechanic (Frostpunk's Book of Laws) and the direct antidote to its
+most-hated failure (Reigns' opaque cause-and-effect). See
+[docs/research/DIRECTIVES.md](./research/DIRECTIVES.md).
+
+- **Riot** → *Crush it* (swift, bloody, reputation hit) · *Negotiate* (spend
+  coin, spare lives) · *Let it burn out* (fortune decides).
+- **Bribe** → *Pocket it* (coin now, scandal risk) · *Refuse* (reputation rises)
+  · *Demand double* (greedy gamble).
+
+Effects are deferred to the chosen option and applied deterministically
+(`src/core/decisions.ts`), so outcomes are reproducible given (seed + choices).
+Per design principle, the game **never scolds** the player for a valid choice —
+consequences, not narration, are the verdict.
+
+### Danger forecast (`src/core/danger.ts`)
+
+The keep shows honest, growing/shrinking **risk bars** for the next day —
+Riot, Fire, Sickness, Escape. These read from the *exact same probability
+formulas the event engine rolls against* (`events.ts` imports `danger.ts`), so
+the warning is trustworthy: what you see is the real chance. Implements research
+directive #3 (telegraph danger the day before), turning unfair-feeling loss into
+player-attributable loss.
+
+Crucially the bars are **probabilities, not certainties** — the dice still roll.
+A high bar can pass quietly; a low bar can still bite. So the player keeps making
+hard calls on the fly rather than reading the future.
+
+## 6a. Morality — the warden's soul (`src/core/morality.ts`)
+
+A single scalar, **−100 (Tyrant) … 0 (Fair) … +100 (Saint)**, that the player
+never sets directly. It drifts from how they treat inmates (crushing riots,
+accepting bribes, employing brutal warders, letting inmates die of neglect push
+it down; negotiating, refusing bribes, freeing inmates push it up). It is
+deliberately **two-sided — neither extreme is strictly better**:
+
+| | Cruel (Tyrant) | Kind (Saint) |
+|---|---|---|
+| Baseline unrest | **−** feared into order | **+** disrespect & agitation |
+| Labour output | **+** worked harder | **−** they slack |
+| Escape attempts | **−** terrified | **+** emboldened |
+| Riot deadliness | **+** cornered violence | **−** calmer |
+| Reputation on a death | **×1.4** (called a butcher) | **×0.6** (given benefit of doubt) |
+| Reputation gains | **×0.6** (distrusted) | **×1.4** (beloved) |
+
+So the classic bind: cruelty buys quiet, obedient, hard-working cells that turn
+into a bloodbath the moment a riot erupts and stain your name with every death;
+kindness wins public love and calm riots but breeds a lazy, disrespectful,
+escape-prone population. The player finds their own point on the spectrum — and
+lives with it. All couplings are pure multipliers (unit-tested).
 
 ---
 
@@ -167,13 +241,40 @@ with ever more valuable prisoners and political figures.
 
 ---
 
-## 8. Loss & Win Conditions
+## 8. Loss & Win Conditions — the run arc
 
-- **Loss — Disgraced:** reputation hits 0 (the magistrate strips your post).
-- **Loss — Bankrupt:** coin falls below −100.
-- **Soft win / endgame:** sustained Crown tier. v1 is an endless "how long can
-  you reign / how high a score" run; a structured campaign with explicit
-  victory chapters is a post-launch goal (see ROADMAP).
+- **Victory:** hold **Crown tier for 30 consecutive days** (a "Xd to glory"
+  countdown badge appears in the HUD at Crown). The victory's *flavor* reflects
+  the reign you actually ran (`src/core/endings.ts`):
+  - **☠ The Iron Warden** — won as a Tyrant (morality ≤ −33)
+  - **🕊 Shepherd of the Lost** — won as a Saint (morality ≥ +33)
+  - **🪙 The Coin-Counter** — won rich (coin ≥ 1500)
+  - **👑 Keeper of the Crown** — the default triumph
+- **Loss — ⚖ Disgraced:** reputation hits 0. **Loss — 📜 Debtor's Walk:** coin
+  below −100. Losses are themed endings too — per design principle the game
+  narrates, never scolds.
+- **The reign summary:** every ending shows "The Reign in Numbers" — days
+  ruled, coin taken in, freed/deaths/escapes, riots faced, hard choices made,
+  rarest inmate held, peak reputation, final moral standing — with a
+  **Save Summary** button that exports the screen as a shareable image (the
+  research's organic-marketing loop). See
+  [docs/img/reign-summary.png](img/reign-summary.png).
+
+### The story deck (`src/core/storyDecisions.ts`)
+
+Eight situational dilemmas join riot/bribe, each eligibility-gated to the
+state of the keep and resolved with the same telegraphed-trade-off rules:
+plague doctor at the gate · a caught ringleader · a noble's family visit · a
+guard caught smuggling · the magistrate's "special treatment" order · a
+starving village at the storehouse · a prisoner duel · an informant selling a
+riot warning. At most one decision fires per day.
+
+### Weather & realm events
+
+Four auto events widen the day-to-day texture: **harsh winter** (firewood need
+doubles for 3 days, ❄ HUD badge), **royal amnesty** (petty prisoners walk
+free), **the famous bard** (reputation swing keyed to how the keep is run), and
+**rat plague** (spoiled stores).
 
 ---
 

@@ -1,0 +1,203 @@
+# Changelog
+
+## Unreleased — "Wardens, Legends & the Crown's Whim" cycle (Tiers 1–2)
+
+### Added
+- **Seven playable wardens** (`src/core/wardens.ts`): Steward (default),
+  Veteran, Confessor, Butcher, Merchant, Reformer, Gambler — each a bundle of
+  pure rule modifiers (prices, wages, intake pay, reputation, labour, crush
+  toll, rarity odds, danger/opportunity heat, starting morality/guards).
+  All earned through play; nothing sold.
+- **Achievements** (`src/core/achievements.ts`): 12 deeds evaluated against
+  live state; six unlock warden classes. Cross-run profile persistence
+  (`src/ui/profile.ts`, mirrored to native storage) with toasts on earn.
+- **Named legends** (`src/core/legends.ts`): Prince Alaric the Deposed,
+  Mirabel the Alchemist, Bishop Odo — legendary/mythic arrivals with
+  multi-beat story arcs (ransoms, escape plots, royal writs), each at most
+  once per run, resolved through the decision modal.
+- **Keep buildings**: infirmary (daily healing), chapel (daily calm), gallows
+  (fear: quiet + fewer escapes, hardens the soul), high walls (halves escape
+  risk — the danger forecast reflects it, single source of truth). One-time
+  purchases in the Market.
+- **The Crown's Whim** pacing modes: slow / steady / chaos scaling danger and
+  opportunity odds; switchable mid-run with no penalty.
+- **Warden & keep identity**: names (rollable), 8 sigils × 8 banner colours,
+  shown on the HUD, endings, and the shareable summary.
+- **Daily challenge**: date-seeded run (same seed for every player — the
+  deterministic core makes this free), fixed loadout, one attempt per day.
+- **New-reign setup screen**: warden carousel with unlock hints, identity
+  forge, pacing pick, daily-challenge entry; reachable from game over and the
+  new settings sheet ("The Warden's Desk": reduced motion, deeds ledger,
+  profile stats, new reign).
+- **Haptics** (`@capacitor/haptics`): impacts on shakes/flashes, success
+  notification on achievements/victory; no-op on web.
+- **Art & audio commissioning spec** (`docs/ART_AUDIO_SPEC.md`): every still,
+  animation, and sound with dimensions, frame counts, formats, priorities,
+  and indicative budgets.
+
+### Changed
+- Save format v5-ready: v4 migration (warden/identity/pacing/buildings/
+  legends) with repair defaults; older saves keep migrating cleanly.
+- Tests 117 → 141; browser smoke now proves warden/buildings/pacing systems
+  live and renders the setup screen (20 assertions).
+
+## Unreleased — "Run Arc & Story Deck" cycle (Tier 0 content)
+
+### Added
+- **Victory & themed endings** (`src/core/endings.ts`): hold Crown tier 30
+  consecutive days to win (👑 countdown badge in the HUD). The victory's flavor
+  reflects the reign — ☠ Iron Warden (tyrant), 🕊 Shepherd of the Lost (saint),
+  🪙 Coin-Counter (rich), 👑 Keeper of the Crown (default); losses are themed
+  too (⚖ Disgraced, 📜 Debtor's Walk). Machine-play harness proves victory is
+  genuinely reachable by prudent play in most seeds.
+- **The reign summary**: every ending shows "The Reign in Numbers" (days ruled,
+  coin taken in, freed/deaths/escapes, riots faced, hard choices made, rarest
+  inmate held, peak reputation, final standing) with a **Save Summary** button
+  that exports the screen as a PNG — the shareable-run marketing loop.
+- **Story decision deck** (`src/core/storyDecisions.ts`): 8 eligibility-gated
+  dilemma cards — plague doctor, caught ringleader, noble's family visit,
+  smuggling guard, magistrate's "special treatment" order, starving village,
+  prisoner duel, riot informant — each with 3 telegraphed options and
+  morality/coin/reputation couplings. At most one decision per day.
+- **4 new auto events**: harsh winter (double firewood for 3 days, ❄ badge),
+  royal amnesty (frees petty prisoners), the famous bard (reputation swing
+  keyed to the keep's state), rat plague (spoiled stores).
+- **First-run onboarding** (`src/ui/onboarding.ts`): five-step, always-skippable
+  gold-ring tooltip tour; shows exactly once (persisted in settings).
+- **Run statistics** tracked across every death/escape/release/income path.
+
+### Changed
+- Save format v3 (stats/crownDays/winter) with migration from v2 and v1.
+- Browser smoke now proves the victory flow end-to-end (forces the crown clock,
+  wins, renders the summary) and that onboarding appears for a fresh warden.
+  Tests 102 → 117.
+
+## Unreleased — "Professionalization" cycle
+
+### Fixed (independent adversarial review — 10 findings, all resolved)
+- **Fines could PAY an indebted warden:** with negative coin, a disorderly
+  inspection's `min(coin, fine)` went negative and *added* money. Fines now
+  seize only seizable coin.
+- **Failed payroll silently erased debt** (clamped negative balances to 0),
+  making bankruptcy nearly unreachable via wages. Partial payment now spends
+  only what exists; debt persists.
+- **Cross-device determinism break:** victim selection drew RNG inside a sort
+  comparator (invalid comparator + engine-dependent draw count — a save
+  replayed on iPhone vs desktop would diverge). Scores are now precomputed,
+  exactly one draw per prisoner (proven by an RNG-cursor test).
+- Payroll failure no longer reshuffles the visible guard roster.
+- A briber who left the keep before the player answered no longer pays out;
+  riots can no longer charge for "phantom" rioters after same-tick releases
+  (costs/deaths capped by the real living count; empty keep fizzles).
+- Disease deaths now darken morality and fatigue guards like every other
+  neglect death.
+- Decision outcome events now carry their real coin/reputation deltas.
+- New-game seeds mix in wall-clock time (fresh installs previously clustered
+  onto near-identical seeds).
+- Game over clears any pending decision from the save.
+- New `test/audit-fixes.test.ts` regression suite encodes every finding;
+  tests 87 → 102.
+
+### Fixed (audit findings — Step 1 of the professionalization pass)
+- **Critical:** saves from the previous release (pre-morality/pre-rarity)
+  loaded and then hard-crashed the game on the first End Day. New versioned
+  save-migration system (`src/core/save.ts`) with a defensive repair pass;
+  proven end-to-end by forging a legacy save in the browser test.
+- **Data-loss risk (iOS):** saves now mirror to native storage via
+  `@capacitor/preferences` (WKWebView localStorage is OS-evictable).
+- Keep roster paginated — inmates beyond the visible rows were unreachable.
+- Guards can now be dismissed (two-tap confirm); the core action had no UI.
+- End Day re-entrancy guard (double-tap could advance two days).
+- Flaky smoke assert: forced riots now guarantee a populated roster.
+
+### Added
+- **Playability harness** (`test/playability.test.ts`): bot wardens
+  (prudent/cruel/greedy/passive) machine-play up to 200 days across dozens of
+  seeds; asserts no state corruption and a real difficulty curve. Tests 75→87.
+- **Decision documents** grounded in five research passes:
+  `docs/CONTENT_ROADMAP.md` (content gap analysis), `docs/MARKETING_PLAN.md`
+  (go-to-market with budget tiers), `docs/RELEASE_PLAN.md` (2026 store
+  submission playbook), `docs/research/marketing-intelligence.md` (raw findings).
+
+## Unreleased — "Rarity, Danger & Morality" cycle
+
+Three interlocking systems that give the game its identity.
+
+### Added
+- **Rarity system** (`src/core/rarity.ts`) — every inmate and guard rolls a
+  rarity (common → uncommon → rare → epic → legendary → mythic) on a second axis
+  from crime severity. Rarer inmates pay far more and work harder but are more
+  volatile and cunning (high-risk/high-reward); rarer guards roll higher skill
+  at a higher wage. Rarity odds improve with the warden's tier — a
+  collection/progression hook. UI: rarity-tinted names + badges on cards,
+  offers, and the guard roster.
+- **Danger forecast** (`src/core/danger.ts`) — honest next-day risk bars for
+  riot / fire / sickness / escape, computed from the *same* probability formulas
+  the event engine rolls against (single source of truth). Shown as
+  growing/shrinking bars in a new Keep-tab status strip. They're probabilities,
+  not certainties — the dice still roll, so hard on-the-fly choices remain.
+  Implements research directive #3 (telegraph danger the day before).
+- **Morality system** (`src/core/morality.ts`) — a −100 (Tyrant) … +100 (Saint)
+  standing that drifts from how the warden treats inmates. Two-sided by design:
+  cruelty fears the cells into order and hard labour but makes cornered riots
+  deadlier and stains reputation on every death; kindness wins reputation and
+  calmer riots but breeds disrespect, slacking, and escapes. Diverging morality
+  bar + standing label in the UI.
+
+### Changed
+- Factory rolls + applies rarity to payout, guard skill/brutality, and wage.
+- The daily tick and decisions now cross-couple morality into labour output,
+  unrest drift, escape/riot odds, and all reputation deltas; rarity into unrest,
+  labour, escape cunning, and release/escape reputation swings.
+- `events.ts` now sources its probabilities from `danger.ts`.
+
+### Tests / verification
+- Suite grown **49 → 75** (new `rarity`, `morality`, `danger` suites, incl. a
+  forecast-matches-reality property test).
+- Browser smoke asserts morality is live, prisoners/guards carry rarity, and
+  crushing a riot measurably lowers morality. Proof: `docs/img/keep-systems.png`.
+
+## Unreleased — "Decisions & Juice" cycle
+
+Grounded in a two-front player-sentiment research pass (see
+[`docs/research`](docs/research/DIRECTIVES.md)); both studies converged on
+telegraphed trade-off decisions and legible, *felt* consequences as the highest-
+value work.
+
+### Added
+- **Decision system** (`src/core/decisions.ts`) — riots and bribes now pause the
+  day and present a hard choice with telegraphed consequences, resolved
+  deterministically:
+  - **Riot:** Crush it · Negotiate · Let it burn out
+  - **Bribe:** Pocket it · Refuse · Demand double
+  - Effects deferred to the chosen option; reproducible given (seed + choices).
+  - The game never scolds a valid choice — consequences, not narration, judge.
+- **Animation & juice layer** (`src/ui/fx.ts`) — animated stat bars, floating
+  number pop-ups, a day-transition wipe, screen-shake + colour-flash on
+  riots/fires, tab-slide transitions.
+- **Reduced-motion accessibility setting** (`src/ui/settings.ts`), defaulting to
+  the OS `prefers-reduced-motion` preference; a HUD gear toggles it.
+- **Animated decision modal** in `GameScene`, blocking input until answered.
+- **Player-sentiment research** reports + synthesized directive tracker under
+  `docs/research/`.
+
+### Changed
+- `resolveEvents` now returns `{ events, decision? }`; riot/bribe no longer
+  auto-resolve.
+- `advanceDay` and `applyAction` are no-ops while a decision is pending (the
+  crisis must be answered first).
+- Shared casualty selection (`killWeakestPrisoners`) and game-over evaluation
+  (`evaluateGameOver`) extracted to `src/core/state.ts` to avoid duplication /
+  import cycles.
+
+### Tests / verification
+- Test suite grown **36 → 49** (new `test/decisions.test.ts`; events suite
+  updated for the decision model).
+- Headless-browser smoke test extended to drive animated days, force a **real
+  riot decision**, render and resolve the modal, and assert zero console errors.
+  Proof screenshots: [`docs/img/riot-decision.png`](docs/img/riot-decision.png).
+
+## 0.1.0 — Vertical slice
+- Initial playable, tested slice: deterministic simulation core, resources,
+  guards, conscripted labour, six events, reputation tiers, Phaser mobile UI,
+  save/load, CI, and Capacitor packaging.

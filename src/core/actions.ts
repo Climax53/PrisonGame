@@ -11,7 +11,8 @@ import { BALANCE } from "./balance";
 import { createGuard, tierForReputation } from "./factory";
 import { Rng } from "./rng";
 import { livingPrisoners, pushLog } from "./state";
-import type { GameState, PlayerAction } from "./types";
+import { wardenMods } from "./wardens";
+import type { BuildingId, GameState, PlayerAction } from "./types";
 
 export interface ActionResult {
   ok: boolean;
@@ -23,6 +24,9 @@ const ok: ActionResult = { ok: true };
 
 export function applyAction(state: GameState, action: PlayerAction): ActionResult {
   if (state.gameOver) return fail("The game is over.");
+  if (state.pendingDecision) {
+    return fail("A crisis demands your answer before anything else.");
+  }
 
   switch (action.type) {
     case "acceptOffer": {
@@ -60,8 +64,7 @@ export function applyAction(state: GameState, action: PlayerAction): ActionResul
     case "buyResource": {
       if (action.resource === "coin") return fail("You cannot buy coin.");
       if (action.amount <= 0) return fail("Amount must be positive.");
-      const unit = BALANCE.prices[action.resource];
-      const cost = unit * action.amount;
+      const cost = costs.buyResource(action.resource, action.amount, state);
       if (state.resources.coin < cost) return fail("Not enough coin.");
       state.resources.coin -= cost;
       state.resources[action.resource] += action.amount;
@@ -74,10 +77,11 @@ export function applyAction(state: GameState, action: PlayerAction): ActionResul
     }
 
     case "hireGuard": {
-      if (state.resources.coin < BALANCE.guards.hireCost) {
+      const hireCost = costs.hireGuard(state);
+      if (state.resources.coin < hireCost) {
         return fail("Not enough coin to hire a warder.");
       }
-      state.resources.coin -= BALANCE.guards.hireCost;
+      state.resources.coin -= hireCost;
       const rng = new Rng(state.rngState);
       const guard = createGuard(state, rng);
       state.rngState = rng.state;
@@ -94,13 +98,30 @@ export function applyAction(state: GameState, action: PlayerAction): ActionResul
       return ok;
     }
 
+    case "build": {
+      const b: BuildingId = action.building;
+      if (state.buildings[b]) return fail("That building already stands.");
+      const cost = costs.build(b, state);
+      if (state.resources.coin < cost) return fail("Not enough coin to build.");
+      state.resources.coin -= cost;
+      state.buildings[b] = true;
+      pushLog(state, `The ${b} is raised for ${cost} coin.`, "good");
+      return ok;
+    }
+
+    case "setPacing": {
+      state.pacing = action.pacing;
+      pushLog(state, `The Crown's Whim shifts: ${action.pacing}.`, "neutral");
+      return ok;
+    }
+
     case "advanceDay":
       // Ending the day is driven by advanceDay() in simulation.ts, not here.
       // Listed for union-exhaustiveness so new action types can't be forgotten.
       return fail("Call advanceDay() to end the day.");
 
     case "upgradeCapacity": {
-      const cost = state.cellCapacity * BALANCE.upgrade.capacityCostPerCell;
+      const cost = costs.upgradeCapacity(state);
       if (state.resources.coin < cost) return fail("Not enough coin to expand.");
       state.resources.coin -= cost;
       state.cellCapacity += BALANCE.upgrade.capacityStep;
@@ -120,12 +141,24 @@ export function applyAction(state: GameState, action: PlayerAction): ActionResul
   }
 }
 
-/** Cost helpers the UI uses to render buttons without duplicating balance math. */
+/** Cost helpers the UI uses to render buttons without duplicating balance
+ * math. All prices respect the warden's nature (the Merchant buys cheap). */
 export const costs = {
-  hireGuard: () => BALANCE.guards.hireCost,
+  hireGuard: (state: GameState) =>
+    Math.round(BALANCE.guards.hireCost * wardenMods(state).wageMult),
   upgradeCapacity: (state: GameState) =>
-    state.cellCapacity * BALANCE.upgrade.capacityCostPerCell,
-  buyResource: (resource: "food" | "firewood" | "buckets", amount: number) =>
-    BALANCE.prices[resource] * amount,
+    Math.round(
+      state.cellCapacity * BALANCE.upgrade.capacityCostPerCell * wardenMods(state).priceMult,
+    ),
+  buyResource: (
+    resource: "food" | "firewood" | "buckets",
+    amount: number,
+    state?: GameState,
+  ) =>
+    Math.round(
+      BALANCE.prices[resource] * amount * (state ? wardenMods(state).priceMult : 1),
+    ),
+  build: (building: BuildingId, state: GameState) =>
+    Math.round(BALANCE.buildings[building].cost * wardenMods(state).priceMult),
   tierFor: tierForReputation,
 };

@@ -17,6 +17,8 @@
     "cap:sync": "cap sync"
   },
   "dependencies": {
+    "@capacitor/haptics": "^6.0.3",
+    "@capacitor/preferences": "^6.0.4",
     "phaser": "^3.80.1"
   },
   "devDependencies": {

@@ -11,17 +11,36 @@ import Phaser from "phaser";
 import {
   advanceDay,
   applyAction,
+  applyDecision,
+  assessDangers,
+  BALANCE,
   costs,
   createInitialState,
+  dangerLevel,
+  endingFor,
   livingPrisoners,
+  moralityStanding,
+  RARITY_ORDER,
   summarize,
   type GameState,
   type LaborAssignment,
   type Prisoner,
 } from "../core";
-import { COLORS, FONT, VIEW } from "../ui/theme";
+import { runOnboarding } from "../ui/onboarding";
+import { runSetup, type SetupResult } from "../ui/setup";
+import { getProfile, hydrateProfile, recordProgress } from "../ui/profile";
+import { COLORS, DANGER_COLOR, FONT, VIEW } from "../ui/theme";
 import { makeBar, makeButton, makePanel } from "../ui/widgets";
-import { loadGame, saveGame } from "../ui/save";
+import { loadGameAsync, saveGame } from "../ui/save";
+import { Juice } from "../ui/fx";
+import { getSettings, updateSettings } from "../ui/settings";
+import { ACHIEVEMENTS, BANNER_COLORS, wardenDef } from "../core";
+
+/** A resource/reputation snapshot used to animate deltas between renders. */
+interface Vitals {
+  coin: number;
+  reputation: number;
+}
 
 type Tab = "keep" | "offers" | "market";
 
@@ -46,34 +65,98 @@ export class GameScene extends Phaser.Scene {
   private activeTab: Tab = "keep";
   private hud!: Phaser.GameObjects.Container;
   private content!: Phaser.GameObjects.Container;
+  private modalLayer!: Phaser.GameObjects.Container;
   private toastText?: Phaser.GameObjects.Text;
+  private juice!: Juice;
+  /** Last drawn vitals, so bars/numbers can animate from the previous value. */
+  private displayed: Vitals = { coin: 0, reputation: 0 };
+  /** Screen position of the coin chip, for floating coin deltas. */
+  private coinChip = { x: 72, y: 72 };
+  private animateReputationFrom: number | null = null;
+  /** Current page of the Keep roster (reset on new game). */
+  private rosterPage = 0;
+  /** Guard id awaiting a second "confirm dismiss" tap, if any. */
+  private confirmDismissId: string | null = null;
+  /** Re-entrancy guard: true while the day-wipe/tick is in flight. */
+  private dayInFlight = false;
 
   constructor() {
     super("GameScene");
   }
 
   create(): void {
-    // Resume a save if one exists; otherwise start fresh with a varied seed.
-    // The seed is taken at the boundary (here, not in the core) so the core
-    // stays deterministic for tests.
-    const saved = loadGame();
-    this.state = saved ?? createInitialState(this.makeSeed());
-
     this.cameras.main.setBackgroundColor(COLORS.bgCss);
     this.hud = this.add.container(0, 0);
     this.content = this.add.container(0, 0);
+    this.modalLayer = this.add.container(0, 0).setDepth(800);
+    this.juice = new Juice(this);
+    void this.bootstrap();
+  }
+
+  /**
+   * Resume a save if one exists (checking durable native storage on device);
+   * otherwise start fresh with a varied seed. The seed is taken at the boundary
+   * (here, not in the core) so the core stays deterministic for tests.
+   */
+  private async bootstrap(): Promise<void> {
+    await hydrateProfile();
+    const saved = await loadGameAsync();
+    this.state = saved ?? createInitialState(this.makeSeed());
+    this.displayed = { coin: this.state.resources.coin, reputation: this.state.reputation };
     this.renderAll();
+    // First-ever run: give the new warden the five-step tour (skippable).
+    if (!saved && !getSettings().hasOnboarded) {
+      runOnboarding(this, () => this.renderAll());
+    }
+  }
+
+  /** Open the new-reign setup (warden select, identity, pacing, daily). */
+  private openSetup(cancellable: boolean): void {
+    runSetup(
+      this,
+      (result: SetupResult) => this.startNewReign(result),
+      cancellable ? () => this.renderAll() : undefined,
+    );
+  }
+
+  private startNewReign(result: SetupResult): void {
+    this.state = createInitialState(result.seed, result.options);
+    this.activeTab = "keep";
+    this.rosterPage = 0;
+    this.confirmDismissId = null;
+    this.displayed = { coin: this.state.resources.coin, reputation: this.state.reputation };
+    this.persist();
+    this.renderAll();
+  }
+
+  /** Evaluate achievements and toast anything newly earned. */
+  private toastAchievements(): void {
+    const fresh = recordProgress(this.state);
+    if (fresh.length === 0) return;
+    this.juice.celebrate();
+    const defs = fresh
+      .map((id) => ACHIEVEMENTS.find((a) => a.id === id))
+      .filter(Boolean);
+    const first = defs[0];
+    if (first) {
+      const extra = defs.length > 1 ? ` (+${defs.length - 1} more)` : "";
+      this.toast(`🏆 Achievement: ${first.title}${extra}`, COLORS.goldCss);
+    }
   }
 
   /** A non-deterministic seed for new games (RNG itself stays seeded/pure). */
   private makeSeed(): number {
-    // performance.now avoids the banned-in-core Date.now while still varying.
-    return Math.floor(performance.now() * 1000) ^ 0x9e3779b9;
+    // Date.now is banned inside the core (determinism), but this scene IS the
+    // boundary. performance.now alone restarts near 0 every launch and is
+    // coarsened by browsers, so fresh installs would cluster onto the same
+    // seeds — mix in wall-clock time for real spread.
+    return (Date.now() ^ Math.floor(performance.now() * 1e6)) | 0;
   }
 
   private renderAll(): void {
     this.renderHud();
     this.renderContent();
+    this.renderModal();
   }
 
   private persist(): void {
@@ -94,19 +177,59 @@ export class GameScene extends Phaser.Scene {
       .setStrokeStyle(2, COLORS.gold, 0.5);
     this.hud.add(banner);
 
-    const title = this.add.text(16, 12, `⚜ Warden's Keep`, {
+    const bannerColor = BANNER_COLORS[s.heraldry?.color ?? 0] ?? COLORS.gold;
+    const title = this.add.text(16, 12, `${s.heraldry?.sigil ?? "⚜"} ${s.keepName || "Warden's Keep"}`, {
       fontFamily: FONT.family,
-      fontSize: "26px",
-      color: COLORS.goldCss,
+      fontSize: "24px",
+      color: `#${bannerColor.toString(16).padStart(6, "0")}`,
     });
+    this.hud.add(
+      this.add.text(18, 40, `${s.wardenName} — ${wardenDef(s.warden).name}${s.dailyChallenge ? "  •  📅 daily" : ""}`, {
+        fontFamily: FONT.family,
+        fontSize: "13px",
+        color: COLORS.neutralCss,
+      }),
+    );
     const tierLabel = this.add
-      .text(VIEW.width - 16, 16, `${tierTitle(s.tier)}  •  Day ${s.day}`, {
+      .text(VIEW.width - 58, 16, `${tierTitle(s.tier)}  •  Day ${s.day}`, {
         fontFamily: FONT.family,
         fontSize: "20px",
         color: COLORS.parchmentCss,
       })
       .setOrigin(1, 0);
     this.hud.add([title, tierLabel]);
+
+    // Active-condition badges: harsh winter, victory countdown at crown tier.
+    const badges: string[] = [];
+    if (s.winterDaysLeft > 0) badges.push(`❄ winter ${s.winterDaysLeft}d`);
+    if (s.tier === "crown" && !s.gameOver) {
+      badges.push(`👑 ${BALANCE.victory.crownDaysRequired - s.crownDays}d to glory`);
+    }
+    if (badges.length > 0) {
+      this.hud.add(
+        this.add
+          .text(VIEW.width - 58, 40, badges.join("   "), {
+            fontFamily: FONT.family,
+            fontSize: "14px",
+            color: COLORS.goldCss,
+          })
+          .setOrigin(1, 0),
+      );
+    }
+
+    // Settings gear — opens the settings/achievements sheet.
+    this.hud.add(
+      makeButton(this, {
+        x: VIEW.width - 48,
+        y: 8,
+        width: 40,
+        height: 40,
+        label: "⚙",
+        fontSize: 22,
+        fill: COLORS.panelLight,
+        onTap: () => this.openSettings(),
+      }),
+    );
 
     // Resource row.
     const chips: Array<[string, string, string]> = [
@@ -128,7 +251,7 @@ export class GameScene extends Phaser.Scene {
       this.hud.add(t);
     });
 
-    // Reputation bar.
+    // Reputation bar — animates from the previously displayed value.
     this.hud.add(
       this.add.text(16, 104, "Reputation", {
         fontFamily: FONT.family,
@@ -136,9 +259,14 @@ export class GameScene extends Phaser.Scene {
         color: COLORS.neutralCss,
       }),
     );
-    this.hud.add(
-      makeBar(this, 16, 124, VIEW.width - 32, 16, s.reputation / 100, COLORS.gold),
-    );
+    const repBar = makeBar(this, 16, 124, VIEW.width - 32, 16, s.reputation / 100, COLORS.gold);
+    this.hud.add(repBar);
+    if (this.animateReputationFrom !== null) {
+      const fill = repBar.getData("fill") as Phaser.GameObjects.Rectangle;
+      const full = repBar.getData("fullWidth") as number;
+      this.juice.tweenBar(fill, this.animateReputationFrom / 100, s.reputation / 100, full);
+      this.animateReputationFrom = null;
+    }
 
     // Net daily ledger hint.
     const net = sum.dailyIncome - sum.dailyWages;
@@ -171,8 +299,10 @@ export class GameScene extends Phaser.Scene {
           fill: this.activeTab === tab ? COLORS.gold : COLORS.panelLight,
           textColor: this.activeTab === tab ? COLORS.inkCss : COLORS.parchmentCss,
           onTap: () => {
+            if (this.activeTab === tab) return;
             this.activeTab = tab;
             this.renderAll();
+            this.juice.slideIn(this.content);
           },
         }),
       );
@@ -205,11 +335,12 @@ export class GameScene extends Phaser.Scene {
 
   private buildKeepTab(): void {
     const s = this.state;
+    const stripBottom = this.buildStatusStrip(this.contentTop);
     const living = s.prisoners.filter((p) => p.alive);
     if (living.length === 0) {
       this.content.add(
         this.add
-          .text(VIEW.width / 2, this.contentTop + 40, "The cells stand empty.\nAccept a prisoner from the Offers tab.", {
+          .text(VIEW.width / 2, stripBottom + 30, "The cells stand empty.\nAccept a prisoner from the Offers tab.", {
             fontFamily: FONT.family,
             fontSize: "22px",
             color: COLORS.neutralCss,
@@ -217,12 +348,12 @@ export class GameScene extends Phaser.Scene {
           })
           .setOrigin(0.5, 0),
       );
-      this.buildLogPanel(this.contentTop + 160);
+      this.buildLogPanel(stripBottom + 120);
       return;
     }
 
     this.content.add(
-      this.add.text(16, this.contentTop, "Tap a prisoner to cycle their labour assignment:", {
+      this.add.text(16, stripBottom, "Tap a prisoner to cycle their labour assignment:", {
         fontFamily: FONT.family,
         fontSize: "16px",
         color: COLORS.neutralCss,
@@ -230,13 +361,139 @@ export class GameScene extends Phaser.Scene {
     );
 
     const cardH = 86;
-    const startY = this.contentTop + 28;
-    const maxRows = Math.floor((this.contentBottom - startY - 150) / (cardH + 8));
-    living.slice(0, maxRows).forEach((p, i) => {
+    const startY = stripBottom + 28;
+    // Reserve at least 120px for the log; page the roster so every inmate is
+    // always reachable no matter how large the keep grows.
+    const maxRows = Math.max(1, Math.floor((this.contentBottom - startY - 120 - 44) / (cardH + 8)));
+    const pages = Math.max(1, Math.ceil(living.length / maxRows));
+    this.rosterPage = Math.min(this.rosterPage, pages - 1);
+    const pageStart = this.rosterPage * maxRows;
+    const shown = living.slice(pageStart, pageStart + maxRows);
+    shown.forEach((p, i) => {
       this.content.add(this.buildPrisonerCard(p, 16, startY + i * (cardH + 8), VIEW.width - 32, cardH));
     });
 
-    this.buildLogPanel(startY + Math.min(living.length, maxRows) * (cardH + 8) + 6);
+    let cursorY = startY + shown.length * (cardH + 8);
+    if (pages > 1) {
+      // Pager: ‹ Prev | Page X/Y | Next ›
+      this.content.add(
+        makeButton(this, {
+          x: 16, y: cursorY, width: 120, height: 40, label: "‹ Prev", fontSize: 17,
+          enabled: this.rosterPage > 0,
+          onTap: () => { this.rosterPage--; this.renderContent(); },
+        }),
+      );
+      this.content.add(
+        this.add
+          .text(VIEW.width / 2, cursorY + 20, `${pageStart + 1}–${pageStart + shown.length} of ${living.length}`, {
+            fontFamily: FONT.family, fontSize: "16px", color: COLORS.neutralCss,
+          })
+          .setOrigin(0.5, 0.5),
+      );
+      this.content.add(
+        makeButton(this, {
+          x: VIEW.width - 16 - 120, y: cursorY, width: 120, height: 40, label: "Next ›", fontSize: 17,
+          enabled: this.rosterPage < pages - 1,
+          onTap: () => { this.rosterPage++; this.renderContent(); },
+        }),
+      );
+      cursorY += 46;
+    }
+
+    this.buildLogPanel(cursorY + 4);
+  }
+
+  /** Warden morality (diverging bar) + honest next-day danger forecast. */
+  private buildStatusStrip(y: number): number {
+    const s = this.state;
+    const w = VIEW.width - 32;
+    const h = 132;
+    const panel = makePanel(this, 16, y, w, h);
+
+    // ── Morality ──
+    panel.add(
+      this.add.text(12, 8, `⚖  Standing: ${moralityStanding(s.morality)}`, {
+        fontFamily: FONT.family,
+        fontSize: "18px",
+        color:
+          s.morality > 10 ? COLORS.goodCss : s.morality < -10 ? COLORS.badCss : COLORS.neutralCss,
+      }),
+    );
+    panel.add(
+      this.add
+        .text(w - 12, 10, `${Math.round(s.morality)}`, {
+          fontFamily: FONT.family,
+          fontSize: "16px",
+          color: COLORS.neutralCss,
+        })
+        .setOrigin(1, 0),
+    );
+    const barX = 12;
+    const barY = 34;
+    const barW = w - 24;
+    const barH = 14;
+    const cx = barX + barW / 2;
+    panel.add(this.add.rectangle(barX, barY, barW, barH, COLORS.shadow).setOrigin(0, 0));
+    const half = barW / 2 - 2;
+    const mag = Math.min(1, Math.abs(s.morality) / 100) * half;
+    if (mag > 0) {
+      if (s.morality > 0) {
+        panel.add(this.add.rectangle(cx, barY + 1, mag, barH - 2, COLORS.moss).setOrigin(0, 0));
+      } else {
+        panel.add(this.add.rectangle(cx - mag, barY + 1, mag, barH - 2, COLORS.blood).setOrigin(0, 0));
+      }
+    }
+    panel.add(this.add.rectangle(cx, barY - 2, 2, barH + 4, COLORS.parchment).setOrigin(0.5, 0));
+    panel.add(
+      this.add.text(barX, barY + barH + 2, "Tyrant", { fontFamily: FONT.family, fontSize: "11px", color: COLORS.badCss }),
+    );
+    panel.add(
+      this.add
+        .text(barX + barW, barY + barH + 2, "Saint", { fontFamily: FONT.family, fontSize: "11px", color: COLORS.goodCss })
+        .setOrigin(1, 0),
+    );
+
+    // ── Danger forecast ──
+    panel.add(
+      this.add.text(12, 66, "Tomorrow's dangers (a warning, not a promise)", {
+        fontFamily: FONT.family,
+        fontSize: "12px",
+        color: COLORS.neutralCss,
+      }),
+    );
+    const dangers = assessDangers(s);
+    const items: Array<[string, number]> = [
+      ["Riot", dangers.riot],
+      ["Fire", dangers.fire],
+      ["Sick", dangers.disease],
+      ["Escape", dangers.escape],
+    ];
+    const colW = (w - 24) / items.length;
+    items.forEach(([label, p], i) => {
+      const cxi = 12 + i * colW;
+      const trackW = colW - 14;
+      panel.add(
+        this.add.text(cxi, 86, label, { fontFamily: FONT.family, fontSize: "13px", color: COLORS.parchmentCss }),
+      );
+      panel.add(this.add.rectangle(cxi, 104, trackW, 12, COLORS.shadow).setOrigin(0, 0));
+      panel.add(
+        this.add
+          .rectangle(cxi, 104, Math.max(0, Math.min(1, p)) * trackW, 12, DANGER_COLOR[dangerLevel(p)])
+          .setOrigin(0, 0),
+      );
+      panel.add(
+        this.add
+          .text(cxi + trackW, 118, `${Math.round(p * 100)}%`, {
+            fontFamily: FONT.family,
+            fontSize: "11px",
+            color: COLORS.neutralCss,
+          })
+          .setOrigin(1, 0),
+      );
+    });
+
+    this.content.add(panel);
+    return y + h + 10;
   }
 
   private buildPrisonerCard(
@@ -256,13 +513,14 @@ export class GameScene extends Phaser.Scene {
       this.add.text(34, 10, `${p.name}`, {
         fontFamily: FONT.family,
         fontSize: "20px",
-        color: COLORS.parchmentCss,
+        // Name tinted by rarity — the notoriety of the inmate at a glance.
+        color: COLORS.rarity[p.rarity] ?? COLORS.parchmentCss,
       }),
     );
     panel.add(
-      this.add.text(34, 34, `${p.severity}  •  ${p.sentenceDays}d left`, {
+      this.add.text(34, 34, `◆ ${p.rarity}  •  ${p.severity}  •  ${p.sentenceDays}d left`, {
         fontFamily: FONT.family,
-        fontSize: "15px",
+        fontSize: "14px",
         color: COLORS.neutralCss,
       }),
     );
@@ -328,13 +586,13 @@ export class GameScene extends Phaser.Scene {
         this.add.text(36, 40, `${p.name}`, {
           fontFamily: FONT.family,
           fontSize: "22px",
-          color: COLORS.parchmentCss,
+          color: COLORS.rarity[p.rarity] ?? COLORS.parchmentCss,
         }),
       );
       panel.add(
-        this.add.text(36, 70, `${p.severity}  •  sentence ${p.sentenceDays}d`, {
+        this.add.text(36, 70, `◆ ${p.rarity}  •  ${p.severity}  •  sentence ${p.sentenceDays}d`, {
           fontFamily: FONT.family,
-          fontSize: "16px",
+          fontSize: "15px",
           color: COLORS.neutralCss,
         }),
       );
@@ -414,21 +672,21 @@ export class GameScene extends Phaser.Scene {
       y += 80;
     };
 
-    row("Buy 10 Food", costs.buyResource("food", 10), () =>
+    row("Buy 10 Food", costs.buyResource("food", 10, s), () =>
       this.doAction({ type: "buyResource", resource: "food", amount: 10 }, "market"),
-      s.resources.coin >= costs.buyResource("food", 10),
+      s.resources.coin >= costs.buyResource("food", 10, s),
     );
-    row("Buy 10 Firewood", costs.buyResource("firewood", 10), () =>
+    row("Buy 10 Firewood", costs.buyResource("firewood", 10, s), () =>
       this.doAction({ type: "buyResource", resource: "firewood", amount: 10 }, "market"),
-      s.resources.coin >= costs.buyResource("firewood", 10),
+      s.resources.coin >= costs.buyResource("firewood", 10, s),
     );
-    row("Buy 2 Buckets", costs.buyResource("buckets", 2), () =>
+    row("Buy 2 Buckets", costs.buyResource("buckets", 2, s), () =>
       this.doAction({ type: "buyResource", resource: "buckets", amount: 2 }, "market"),
-      s.resources.coin >= costs.buyResource("buckets", 2),
+      s.resources.coin >= costs.buyResource("buckets", 2, s),
     );
-    row(`Hire Warder`, costs.hireGuard(), () =>
+    row(`Hire Warder`, costs.hireGuard(s), () =>
       this.doAction({ type: "hireGuard" }, "market"),
-      s.resources.coin >= costs.hireGuard(),
+      s.resources.coin >= costs.hireGuard(s),
     );
     row(
       `Expand Cells (+2 → ${s.cellCapacity + 2})`,
@@ -437,17 +695,81 @@ export class GameScene extends Phaser.Scene {
       s.resources.coin >= costs.upgradeCapacity(s),
     );
 
-    // Guard roster summary.
-    const panel = makePanel(this, 16, y + 4, VIEW.width - 32, 120, `Warders (${s.guards.length})`);
-    s.guards.slice(0, 4).forEach((g, i) => {
+    // Keep buildings — one-time constructions, each a permanent dial.
+    const BUILDING_ROWS: Array<[Parameters<typeof costs.build>[0], string, string]> = [
+      ["infirmary", "🏥 Infirmary", "heals every inmate daily"],
+      ["chapel", "⛪ Chapel", "calms the cells daily"],
+      ["gallows", "🪢 Gallows", "fear: quiet cells, fewer escapes — hardens your soul"],
+      ["walls", "🧱 High Walls", "halves escape attempts"],
+    ];
+    for (const [id, label, hint] of BUILDING_ROWS) {
+      const built = s.buildings[id];
+      const cost = costs.build(id, s);
+      const panel2 = makePanel(this, 16, y, VIEW.width - 32, 70);
+      panel2.add(
+        this.add.text(16, 12, label + (built ? "  ✓ built" : ""), {
+          fontFamily: FONT.family, fontSize: "18px",
+          color: built ? COLORS.goodCss : COLORS.parchmentCss,
+        }),
+      );
+      panel2.add(
+        this.add.text(16, 38, hint, {
+          fontFamily: FONT.family, fontSize: "13px", color: COLORS.neutralCss,
+        }),
+      );
+      if (!built) {
+        panel2.add(
+          makeButton(this, {
+            x: VIEW.width - 32 - 150, y: 11, width: 138, height: 48,
+            label: `${cost} 🪙`, fontSize: 18,
+            enabled: s.resources.coin >= cost,
+            onTap: () => this.doAction({ type: "build", building: id }, "market"),
+          }),
+        );
+      }
+      this.content.add(panel2);
+      y += 80;
+    }
+
+    // Guard roster with dismissal (two-tap confirm — destructive action).
+    const shown = s.guards.slice(0, 5);
+    const rosterH = 40 + shown.length * 34 + (s.guards.length > 5 ? 22 : 0);
+    const panel = makePanel(this, 16, y + 4, VIEW.width - 32, Math.max(70, rosterH), `Warders (${s.guards.length})`);
+    shown.forEach((g, i) => {
+      const rowY = 36 + i * 34;
       panel.add(
-        this.add.text(16, 34 + i * 20, `${g.name} — skill ${g.skill}, brutality ${g.brutality}, wage ${g.wage}`, {
+        this.add.text(16, rowY + 7, `${g.name} — skill ${g.skill}, brut ${g.brutality}, wage ${g.wage}`, {
           fontFamily: FONT.family,
           fontSize: "14px",
-          color: COLORS.neutralCss,
+          color: COLORS.rarity[g.rarity] ?? COLORS.neutralCss,
+        }),
+      );
+      const confirming = this.confirmDismissId === g.id;
+      panel.add(
+        makeButton(this, {
+          x: VIEW.width - 32 - 118, y: rowY, width: 106, height: 30,
+          label: confirming ? "Dismiss?" : "✕",
+          fontSize: 14,
+          fill: confirming ? COLORS.blood : COLORS.panelLight,
+          onTap: () => {
+            if (confirming) {
+              this.confirmDismissId = null;
+              this.doAction({ type: "fireGuard", guardId: g.id }, "market");
+            } else {
+              this.confirmDismissId = g.id;
+              this.renderContent();
+            }
+          },
         }),
       );
     });
+    if (s.guards.length > 5) {
+      panel.add(
+        this.add.text(16, 36 + shown.length * 34, `…and ${s.guards.length - 5} more on the payroll`, {
+          fontFamily: FONT.family, fontSize: "13px", color: COLORS.neutralCss,
+        }),
+      );
+    }
     this.content.add(panel);
   }
 
@@ -487,75 +809,389 @@ export class GameScene extends Phaser.Scene {
   }
 
   private endDay(): void {
-    advanceDay(this.state);
-    this.persist();
-    // Surface the day's headline event, if any.
-    const head = this.state.lastEvents[0];
-    if (head) this.toast(head.message, head.deaths > 0 ? COLORS.badCss : COLORS.goldCss);
-    this.renderAll();
+    if (this.state.pendingDecision || this.state.gameOver || this.dayInFlight) return;
+    this.dayInFlight = true;
+    const beforeCoin = this.state.resources.coin;
+    const beforeRep = this.state.reputation;
+    const targetDay = this.state.day + 1;
+
+    this.juice.dayWipe(`Day ${targetDay}`, () => {
+      advanceDay(this.state);
+      this.persist();
+      this.animateReputationFrom = beforeRep;
+      this.displayed.reputation = this.state.reputation;
+      this.renderAll();
+      // The tick has landed — safe to accept the next End Day. The feedback
+      // below is fire-and-forget visuals only.
+      this.dayInFlight = false;
+    });
+
+    // Reveal the day's consequences once the wipe lifts.
+    const delay = getSettings().reducedMotion ? 0 : 620;
+    this.time.delayedCall(delay, () => this.dayFeedback(beforeCoin));
+  }
+
+  /** Screen-shake, flashes, floating coin, and a toast for the day's outcome. */
+  private dayFeedback(beforeCoin: number): void {
+    const deaths = this.state.lastEvents.reduce((n, e) => n + e.deaths, 0);
+    if (deaths > 0) {
+      this.juice.shake(420, 0.015);
+      this.juice.flash(COLORS.blood);
+    } else if (this.state.lastEvents.some((e) => e.kind === "fire")) {
+      this.juice.shake(300, 0.01);
+    }
+    const coinDelta = Math.round(this.state.resources.coin - beforeCoin);
+    if (coinDelta !== 0) {
+      this.juice.floatNumber(
+        this.coinChip.x,
+        this.coinChip.y,
+        `${coinDelta > 0 ? "+" : ""}${coinDelta}`,
+        coinDelta > 0 ? COLORS.goldCss : COLORS.bloodCss,
+      );
+    }
+    this.displayed.coin = this.state.resources.coin;
+
+    // If a decision is pending, the modal speaks for the day; else toast it.
+    if (!this.state.pendingDecision) {
+      const head = this.state.lastEvents[0];
+      if (head) this.toast(head.message, head.deaths > 0 ? COLORS.badCss : COLORS.goldCss);
+    }
+
+    // Achievements land after the day's news has had its moment.
+    this.time.delayedCall(2600, () => this.toastAchievements());
   }
 
   private doAction(action: Parameters<typeof applyAction>[1], _tab: Tab): void {
+    const beforeCoin = this.state.resources.coin;
     const res = applyAction(this.state, action);
     if (!res.ok && res.error) {
       this.toast(res.error, COLORS.badCss);
     }
     this.persist();
     this.renderAll();
+    const coinDelta = Math.round(this.state.resources.coin - beforeCoin);
+    if (coinDelta !== 0) {
+      this.juice.floatNumber(
+        this.coinChip.x,
+        this.coinChip.y,
+        `${coinDelta > 0 ? "+" : ""}${coinDelta}`,
+        coinDelta > 0 ? COLORS.goldCss : COLORS.bloodCss,
+      );
+    }
   }
 
+  // ── Settings & achievements sheet ──────────────────────────────────────────
+  private openSettings(): void {
+    const layer = this.add.container(0, 0).setDepth(870);
+    const close = () => {
+      layer.destroy();
+      this.renderAll();
+    };
+    const render = () => {
+      layer.removeAll(true);
+      layer.add(
+        this.add
+          .rectangle(0, 0, VIEW.width, VIEW.height, COLORS.shadow, 0.9)
+          .setOrigin(0, 0)
+          .setInteractive(),
+      );
+      const w = VIEW.width - 64;
+      const panel = makePanel(this, 32, 60, w, VIEW.height - 160, "⚙ The Warden's Desk");
+
+      // Reduced motion toggle.
+      const rm = getSettings().reducedMotion;
+      panel.add(
+        this.add.text(16, 44, "Reduced motion", {
+          fontFamily: FONT.family, fontSize: "18px", color: COLORS.parchmentCss,
+        }),
+      );
+      panel.add(
+        makeButton(this, {
+          x: w - 116, y: 36, width: 100, height: 40,
+          label: rm ? "ON" : "OFF", fontSize: 16,
+          fill: rm ? COLORS.gold : COLORS.panelLight,
+          textColor: rm ? COLORS.inkCss : COLORS.parchmentCss,
+          onTap: () => {
+            updateSettings({ reducedMotion: !rm });
+            render();
+          },
+        }),
+      );
+
+      // Achievements ledger.
+      const profile = getProfile();
+      panel.add(
+        this.add.text(16, 96, `🏆 Deeds  (${profile.achievements.length}/${ACHIEVEMENTS.length})`, {
+          fontFamily: FONT.family, fontSize: "18px", color: COLORS.goldCss,
+        }),
+      );
+      ACHIEVEMENTS.forEach((a, i) => {
+        const earned = profile.achievements.includes(a.id);
+        const y = 128 + i * 44;
+        panel.add(
+          this.add.text(16, y, `${earned ? "✓" : "·"} ${a.title}`, {
+            fontFamily: FONT.family, fontSize: "15px",
+            color: earned ? COLORS.goodCss : COLORS.neutralCss,
+          }),
+        );
+        panel.add(
+          this.add.text(32, y + 18, earned && a.unlocksWarden ? `${a.text}  → unlocked ${a.unlocksWarden}` : a.text, {
+            fontFamily: FONT.family, fontSize: "12px", color: COLORS.neutralCss,
+          }),
+        );
+      });
+
+      const bottomY = 128 + ACHIEVEMENTS.length * 44 + 12;
+      panel.add(
+        this.add.text(16, bottomY, `Reigns: ${profile.runsCompleted}  •  Victories: ${profile.runsWon}  •  Longest: ${profile.bestReign}d`, {
+          fontFamily: FONT.family, fontSize: "13px", color: COLORS.neutralCss,
+        }),
+      );
+
+      panel.add(
+        makeButton(this, {
+          x: 16, y: bottomY + 32, width: (w - 44) / 2, height: 52,
+          label: "⚜ A New Reign", fontSize: 17,
+          fill: COLORS.blood,
+          onTap: () => {
+            layer.destroy();
+            this.openSetup(true);
+          },
+        }),
+      );
+      panel.add(
+        makeButton(this, {
+          x: 16 + (w - 44) / 2 + 12, y: bottomY + 32, width: (w - 44) / 2, height: 52,
+          label: "Close", fontSize: 17,
+          onTap: close,
+        }),
+      );
+      layer.add(panel);
+    };
+    render();
+  }
+
+  // ── Decision modal ─────────────────────────────────────────────────────────
+  private renderModal(): void {
+    this.modalLayer.removeAll(true);
+    const d = this.state.pendingDecision;
+    if (!d || this.state.gameOver) return;
+
+    // A full-screen backdrop that swallows input to the game beneath.
+    this.modalLayer.add(
+      this.add
+        .rectangle(0, 0, VIEW.width, VIEW.height, COLORS.shadow, 0.82)
+        .setOrigin(0, 0)
+        .setInteractive(),
+    );
+
+    const panelW = VIEW.width - 56;
+    const optH = 92;
+    const panelH = 150 + d.options.length * (optH + 14);
+    const px = 28;
+    const py = Math.max(60, (VIEW.height - panelH) / 2);
+    const panel = makePanel(this, px, py, panelW, panelH, d.kind === "riot" ? "⚔  RIOT!" : "💰  A Quiet Word");
+
+    panel.add(
+      this.add.text(16, 44, d.prompt, {
+        fontFamily: FONT.family,
+        fontSize: "18px",
+        color: COLORS.parchmentCss,
+        align: "left",
+        wordWrap: { width: panelW - 32 },
+      }),
+    );
+
+    d.options.forEach((o, i) => {
+      const oy = 118 + i * (optH + 14);
+      panel.add(
+        makeButton(this, {
+          x: 16,
+          y: oy,
+          width: panelW - 32,
+          height: 52,
+          label: o.label,
+          fontSize: 22,
+          fill: COLORS.panelLight,
+          onTap: () => this.resolveDecision(o.id),
+        }),
+      );
+      panel.add(
+        this.add.text(20, oy + 56, o.hint, {
+          fontFamily: FONT.family,
+          fontSize: "14px",
+          color: COLORS.neutralCss,
+          wordWrap: { width: panelW - 40 },
+        }),
+      );
+    });
+
+    this.modalLayer.add(panel);
+
+    if (!getSettings().reducedMotion) {
+      panel.setScale(0.92);
+      panel.setAlpha(0);
+      this.tweens.add({
+        targets: panel,
+        scale: 1,
+        alpha: 1,
+        duration: 220,
+        ease: "Back.easeOut",
+      });
+    }
+  }
+
+  private resolveDecision(optionId: string): void {
+    const beforeCoin = this.state.resources.coin;
+    const beforeRep = this.state.reputation;
+    const out = applyDecision(this.state, optionId);
+    this.persist();
+    this.animateReputationFrom = beforeRep;
+    this.displayed.reputation = this.state.reputation;
+    this.renderAll(); // pendingDecision now cleared → modal closes
+
+    if (out.ok) {
+      const deaths = out.deaths ?? 0;
+      if (deaths > 0) {
+        this.juice.shake(440, 0.016);
+        this.juice.flash(COLORS.blood);
+      }
+      if (out.message) {
+        const c =
+          out.tone === "good"
+            ? COLORS.goodCss
+            : out.tone === "bad"
+              ? COLORS.badCss
+              : COLORS.goldCss;
+        this.toast(out.message, c);
+      }
+      const coinDelta = Math.round(this.state.resources.coin - beforeCoin);
+      if (coinDelta !== 0) {
+        this.juice.floatNumber(
+          this.coinChip.x,
+          this.coinChip.y,
+          `${coinDelta > 0 ? "+" : ""}${coinDelta}`,
+          coinDelta > 0 ? COLORS.goldCss : COLORS.bloodCss,
+        );
+      }
+      // A decision can end the run (or earn a deed) on the spot.
+      this.time.delayedCall(2600, () => this.toastAchievements());
+    }
+  }
+
+  /** The reign summary — themed ending + shareable statistics card. */
   private renderGameOver(): void {
     const s = this.state;
+    const ending = endingFor(s);
+    const accent = ending.won ? COLORS.goldCss : COLORS.badCss;
+
     this.content.add(
-      this.add.rectangle(0, 0, VIEW.width, VIEW.height, COLORS.shadow, 0.85).setOrigin(0, 0),
+      this.add.rectangle(0, 0, VIEW.width, VIEW.height, COLORS.shadow, 0.92).setOrigin(0, 0),
     );
+
+    let y = 120;
     this.content.add(
       this.add
-        .text(VIEW.width / 2, VIEW.height / 2 - 120, "☠  THE KEEP HAS FALLEN", {
+        .text(VIEW.width / 2, y, ending.title, {
           fontFamily: FONT.family,
-          fontSize: "32px",
-          color: COLORS.badCss,
+          fontSize: "34px",
+          color: accent,
         })
-        .setOrigin(0.5),
+        .setOrigin(0.5, 0),
     );
+    y += 60;
     this.content.add(
       this.add
-        .text(VIEW.width / 2, VIEW.height / 2 - 40, s.gameOverReason ?? "", {
+        .text(VIEW.width / 2, y, ending.text, {
           fontFamily: FONT.family,
-          fontSize: "20px",
+          fontSize: "18px",
           color: COLORS.parchmentCss,
           align: "center",
-          wordWrap: { width: VIEW.width - 80 },
+          wordWrap: { width: VIEW.width - 96 },
+          lineSpacing: 4,
         })
-        .setOrigin(0.5),
+        .setOrigin(0.5, 0),
     );
+    y += 170;
+
+    // The reign in numbers.
+    const st = s.stats;
+    const panel = makePanel(this, 48, y, VIEW.width - 96, 330, "⚜ The Reign in Numbers");
+    const rows: Array<[string, string]> = [
+      ["Days ruled", `${s.day}`],
+      ["Coin taken in", `${Math.round(st.totalCoinEarned)} 🪙`],
+      ["Prisoners freed", `${st.totalReleased}`],
+      ["Deaths in the keep", `${st.totalDeaths}`],
+      ["Escapes", `${st.totalEscapes}`],
+      ["Riots faced", `${st.riotsFaced}`],
+      ["Hard choices made", `${st.decisionsMade}`],
+      ["Rarest inmate held", `${RARITY_ORDER[st.bestRarityRank] ?? "common"}`],
+      ["Peak reputation", `${Math.round(st.peakReputation)}`],
+      ["Final standing", moralityStanding(s.morality)],
+    ];
+    rows.forEach(([label, value], i) => {
+      const ry = 40 + i * 28;
+      panel.add(
+        this.add.text(16, ry, label, {
+          fontFamily: FONT.family, fontSize: "16px", color: COLORS.neutralCss,
+        }),
+      );
+      panel.add(
+        this.add
+          .text(VIEW.width - 96 - 16, ry, value, {
+            fontFamily: FONT.family, fontSize: "16px", color: COLORS.parchmentCss,
+          })
+          .setOrigin(1, 0),
+      );
+    });
+    this.content.add(panel);
+    y += 350;
+
     this.content.add(
-      this.add
-        .text(VIEW.width / 2, VIEW.height / 2 + 30, `You lasted ${s.day} days.`, {
-          fontFamily: FONT.family,
-          fontSize: "20px",
-          color: COLORS.neutralCss,
-        })
-        .setOrigin(0.5),
+      makeButton(this, {
+        x: VIEW.width / 2 - 250, y, width: 240, height: 60,
+        label: "📜 Save Summary",
+        fontSize: 20,
+        fill: COLORS.panelLight,
+        onTap: () => this.saveSummaryImage(),
+      }),
     );
     this.content.add(
       makeButton(this, {
-        x: VIEW.width / 2 - 130,
-        y: VIEW.height / 2 + 90,
-        width: 260,
-        height: 64,
+        x: VIEW.width / 2 + 10, y, width: 240, height: 60,
         label: "Begin Anew",
-        fontSize: 24,
+        fontSize: 22,
         fill: COLORS.gold,
         textColor: COLORS.inkCss,
-        onTap: () => {
-          this.state = createInitialState(this.makeSeed());
-          this.activeTab = "keep";
-          this.persist();
-          this.renderAll();
-        },
+        onTap: () => this.openSetup(true),
       }),
     );
+  }
+
+  /** Snapshot the reign summary to a PNG the player can save/share. */
+  private saveSummaryImage(): void {
+    try {
+      this.game.renderer.snapshot((snap) => {
+        try {
+          const img = snap as HTMLImageElement;
+          const canvas = document.createElement("canvas");
+          canvas.width = img.width;
+          canvas.height = img.height;
+          const ctx = canvas.getContext("2d");
+          if (!ctx) return;
+          ctx.drawImage(img, 0, 0);
+          const a = document.createElement("a");
+          a.href = canvas.toDataURL("image/png");
+          a.download = `wardens-keep-day-${this.state.day}.png`;
+          a.click();
+          this.toast("Reign summary saved.", COLORS.goldCss);
+        } catch {
+          this.toast("Could not save the image on this device.", COLORS.badCss);
+        }
+      });
+    } catch {
+      this.toast("Could not save the image on this device.", COLORS.badCss);
+    }
   }
 
   private toast(message: string, color: string = COLORS.parchmentCss): void {

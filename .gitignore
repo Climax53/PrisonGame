@@ -9,7 +9,7 @@ dist/
 /android/
 
 # Test / verify artifacts
-scripts/screenshot.png
+scripts/screenshot*.png
 *.log
 
 # OS / editor

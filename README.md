@@ -30,9 +30,21 @@ simulation and see what the night brings.
 
 Accept prisoners for daily pay → feed, warm, and keep them sanitary → suppress
 unrest with guards (skill keeps order, brutality kills) → optionally conscript
-inmates into risky labour for resources → survive riots/fires/disease/escapes →
-earn reputation → the crown sends richer, deadlier prisoners. Lose if your
-reputation collapses or you go bankrupt.
+inmates into risky labour for resources → survive fires/disease/escapes and
+**answer riots & bribes with a hard choice** → earn reputation → the crown sends
+richer, deadlier prisoners. Lose if your reputation collapses or you go bankrupt.
+
+Riots and bribes pause the day as **telegraphed trade-off decisions** (crush the
+riot vs. negotiate; pocket the bribe vs. refuse) — the design is grounded in
+real player-sentiment research: **[docs/research](docs/research)**.
+
+Three systems give the keep its texture: **rarity** (common → mythic notoriety on
+inmates & guards — rarer pays more but is far more volatile), a **danger
+forecast** (honest next-day risk bars that share the event engine's own odds, so
+the warning is real but the dice still roll), and **morality** (a two-sided
+Tyrant ↔ Saint standing where cruelty buys order at the cost of bloodier riots
+and a stained name, while kindness buys reputation at the cost of disrespect and
+escapes).
 
 Full design: **[docs/GAME_DESIGN.md](docs/GAME_DESIGN.md)**.
 
@@ -42,7 +54,7 @@ Full design: **[docs/GAME_DESIGN.md](docs/GAME_DESIGN.md)**.
 |---|---|
 | `npm run dev` | Vite dev server with hot reload |
 | `npm run build` | Type-check + production build to `dist/` |
-| `npm test` | Run the 36-test Vitest suite (core logic) |
+| `npm test` | Run the 141-test Vitest suite (core logic) |
 | `npm run smoke` | Headless-Chromium boot test (needs a preview server running) |
 | `npm run verify` | Build → serve → browser smoke-test, end to end |
 | `npm run check` | **typecheck + tests + verify** — the full gate |
@@ -80,6 +92,17 @@ npx cap open android                      # Android Studio (Play/Samsung license
 
 The road from this slice to the stores — phases, exit criteria, and the
 store-readiness checklist — is in **[docs/ROADMAP.md](docs/ROADMAP.md)**.
+
+Professionalization plans (July 2026):
+- **[docs/CONTENT_ROADMAP.md](docs/CONTENT_ROADMAP.md)** — what's genuinely
+  missing (art, audio, onboarding, endings, wardens, story inmates) and in what
+  order, with explicit non-goals
+- **[docs/MARKETING_PLAN.md](docs/MARKETING_PLAN.md)** — evidence-based go-to-
+  market: organic three-engine strategy, budget tiers, 8-week runbook
+- **[docs/RELEASE_PLAN.md](docs/RELEASE_PLAN.md)** — the verified 2026 App
+  Store + Google Play submission playbook and timeline
+- **[docs/ART_AUDIO_SPEC.md](docs/ART_AUDIO_SPEC.md)** — the complete art &
+  audio commissioning specification (every still, animation, and sound)
 
 ## Contributing
 

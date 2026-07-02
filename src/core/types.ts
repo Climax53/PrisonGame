@@ -10,6 +10,31 @@
 /** How dangerous / valuable a prisoner is. Drives payout, unrest, and intake gating. */
 export type Severity = "petty" | "violent" | "political" | "noble";
 
+/**
+ * A second axis, orthogonal to crime severity. Rarity is how *notorious* /
+ * remarkable an inmate (or guard) is. Rarer inmates pay far more and work a
+ * touch harder, but are more volatile and cunning — high-risk, high-reward.
+ * Rarer guards are more skilled but command higher wages. Rarity odds improve
+ * with the warden's tier, giving a collection/progression hook.
+ */
+export type Rarity =
+  | "common"
+  | "uncommon"
+  | "rare"
+  | "epic"
+  | "legendary"
+  | "mythic";
+
+/** Ordered low→high, so index also serves as a numeric rank. */
+export const RARITY_ORDER: Rarity[] = [
+  "common",
+  "uncommon",
+  "rare",
+  "epic",
+  "legendary",
+  "mythic",
+];
+
 /** Where a conscripted prisoner is assigned to labor. `none` = idle in cell. */
 export type LaborAssignment =
   | "none"
@@ -23,6 +48,8 @@ export interface Prisoner {
   id: string;
   name: string;
   severity: Severity;
+  /** Notoriety tier — see Rarity. Affects payout, labour, unrest, escape. */
+  rarity: Rarity;
   /** 0–100. At 0 the prisoner dies. */
   health: number;
   /** 0–100. High unrest fuels riots and escape attempts. */
@@ -33,6 +60,10 @@ export interface Prisoner {
   assignment: LaborAssignment;
   /** Coin the government pays per day to hold this inmate (locked at intake). */
   dailyPayout: number;
+  /** Set when this inmate is a named legend with a story arc (legends.ts). */
+  legendId?: string;
+  /** Next arc step awaiting its trigger (index into the legend's steps). */
+  legendStep?: number;
   alive: boolean;
 }
 
@@ -40,6 +71,8 @@ export interface Prisoner {
 export interface Guard {
   id: string;
   name: string;
+  /** Notoriety tier — rarer warders roll higher skill but cost more in wages. */
+  rarity: Rarity;
   /** 0–100. Higher skill suppresses unrest and resolves events better. */
   skill: number;
   /** 0–100. Brutality suppresses unrest fast but raises death risk and lowers reputation. */
@@ -78,7 +111,22 @@ export type EventKind =
   | "disease"
   | "escape"
   | "inspection"
-  | "bribe";
+  | "bribe"
+  | "winter" // harsh cold snap — firewood need doubles for a few days
+  | "amnesty" // royal decree frees the petty criminals
+  | "bard" // a famous bard sings of your keep — for better or worse
+  | "ratPlague" // vermin in the stores
+  // Story decisions (pause-and-choose), see storyDecisions.ts:
+  | "plagueDoctor"
+  | "ringleader"
+  | "nobleVisit"
+  | "smuggler"
+  | "magistrateOrder"
+  | "starvingVillage"
+  | "duel"
+  | "informant"
+  // Named-legend arc beats (legends.ts):
+  | "legend";
 
 /** A resolved event, recorded for the player log and outcome math. */
 export interface GameEvent {
@@ -99,12 +147,96 @@ export interface LogEntry {
   tone: "good" | "bad" | "neutral";
 }
 
+// ── Decisions ────────────────────────────────────────────────────────────────
+// Some events are too consequential to auto-resolve. They pause the day and ask
+// the warden to choose. This is the genre's most-loved mechanic: meaningful,
+// legible trade-offs. Effects are deferred to the chosen option and applied by
+// applyDecision(), keeping everything deterministic.
+
+export type DecisionKind =
+  | "riot"
+  | "bribe"
+  | "plagueDoctor"
+  | "ringleader"
+  | "nobleVisit"
+  | "smuggler"
+  | "magistrateOrder"
+  | "starvingVillage"
+  | "duel"
+  | "informant"
+  | "legend"; // a named inmate's story-arc beat (see legends.ts)
+
+/** The playable warden classes. `steward` is the always-unlocked default. */
+export type WardenClass =
+  | "steward"
+  | "veteran"
+  | "confessor"
+  | "butcher"
+  | "merchant"
+  | "reformer"
+  | "gambler";
+
+/** Event-pacing modes — the "Crown's Whim". Changeable mid-run, no penalty. */
+export type Pacing = "slow" | "steady" | "chaos";
+
+/** Purchasable keep buildings, each a permanent strategic dial. */
+export type BuildingId = "infirmary" | "chapel" | "gallows" | "walls";
+
+/** Cosmetic identity shown on the HUD, endings, and the share card. */
+export interface Heraldry {
+  /** Index into the banner-colour palette. */
+  color: number;
+  /** Sigil glyph (from the fixed sigil set). */
+  sigil: string;
+}
+
+/** One selectable response to a pending decision. */
+export interface DecisionOption {
+  id: string;
+  label: string;
+  /** Short, honest hint at the trade-off shown under the button. */
+  hint: string;
+}
+
+/** A situation awaiting the warden's choice. Plain data so it saves/loads. */
+export interface PendingDecision {
+  kind: DecisionKind;
+  day: number;
+  /** The situation text shown at the top of the modal. */
+  prompt: string;
+  options: DecisionOption[];
+  /** Data needed to resolve the outcome (ids, amounts). Plain values only. */
+  context: Record<string, number | string>;
+}
+
+/** Lifetime statistics of the current run, for endings and the reign summary. */
+export interface RunStats {
+  totalDeaths: number;
+  totalEscapes: number;
+  totalReleased: number;
+  /** Coin taken in from all sources (income, bounties, bribes). */
+  totalCoinEarned: number;
+  riotsFaced: number;
+  decisionsMade: number;
+  /** Highest rarity rank ever held in the cells (index into RARITY_ORDER). */
+  bestRarityRank: number;
+  peakReputation: number;
+}
+
 /** The complete serializable game state. Saving = JSON.stringify(state). */
 export interface GameState {
   day: number;
   tier: WardenTier;
   /** 0–100. The master progression metric. */
   reputation: number;
+  /**
+   * −100 (Tyrant) … 0 (Fair) … +100 (Saint). The warden's moral standing,
+   * shaped over time by how they treat inmates. Cruelty fears the cells into
+   * order but makes cornered riots deadlier and the crown call you a butcher;
+   * kindness lifts reputation and calms riots but breeds disrespect, slacking,
+   * and escapes.
+   */
+  morality: number;
   resources: Resources;
   prisoners: Prisoner[];
   guards: Guard[];
@@ -115,11 +247,37 @@ export interface GameState {
   log: LogEntry[];
   /** Events resolved on the most recent day (for UI highlight). */
   lastEvents: GameEvent[];
+  /** A choice awaiting the warden. Blocks ending the next day until resolved. */
+  pendingDecision?: PendingDecision;
   /** Seeded RNG cursor — kept in state so saves are fully deterministic. */
   rngState: number;
   /** True once a loss condition is reached. */
   gameOver: boolean;
   gameOverReason?: string;
+  /** True when the run ended in victory (gameOver is also set). */
+  gameWon?: boolean;
+  /** Which ending was reached (see endings.ts), set alongside gameOver. */
+  endingId?: string;
+  /** Consecutive days holding Crown tier; 30 wins the run. */
+  crownDays: number;
+  /** Days of harsh winter remaining (firewood need is doubled while > 0). */
+  winterDaysLeft: number;
+  /** Lifetime run statistics for endings and the reign summary. */
+  stats: RunStats;
+  /** Which warden class rules this run. */
+  warden: WardenClass;
+  /** Player-chosen names + heraldry (cosmetic identity). */
+  wardenName: string;
+  keepName: string;
+  heraldry: Heraldry;
+  /** Event-pacing mode (the Crown's Whim). */
+  pacing: Pacing;
+  /** Keep buildings constructed this run. */
+  buildings: Record<BuildingId, boolean>;
+  /** Legend ids already introduced this run (no repeats). */
+  legendsSeen: string[];
+  /** Set when this run is a daily challenge (the ISO date it belongs to). */
+  dailyChallenge?: string;
   /** Monotonic counter used to mint unique ids without Math.random. */
   idCounter: number;
 }
@@ -133,4 +291,6 @@ export type PlayerAction =
   | { type: "hireGuard" }
   | { type: "fireGuard"; guardId: string }
   | { type: "upgradeCapacity" }
+  | { type: "build"; building: BuildingId }
+  | { type: "setPacing"; pacing: Pacing }
   | { type: "advanceDay" };

@@ -6,6 +6,7 @@ export { BALANCE } from "./balance";
 export { Rng, nextRandom } from "./rng";
 export {
   createInitialState,
+  emptyStats,
   pushLog,
   livingPrisoners,
   effectiveGuardSkill,
@@ -13,37 +14,72 @@ export {
 } from "./state";
 export { advanceDay, summarize } from "./simulation";
 export { applyAction, costs, type ActionResult } from "./actions";
-export { resolveEvents } from "./events";
+export { resolveEvents, type EventResolution } from "./events";
+export {
+  applyDecision,
+  buildRiotDecision,
+  buildBribeDecision,
+  type DecisionOutcome,
+} from "./decisions";
+export {
+  pickStoryDecision,
+  resolveStoryDecision,
+  STORY_KINDS,
+} from "./storyDecisions";
+export { endingFor, pickVictoryEnding, checkVictory, type Ending } from "./endings";
+export { WARDENS, wardenDef, wardenMods, type WardenDef, type WardenMods } from "./wardens";
+export {
+  ACHIEVEMENTS,
+  evaluateAchievements,
+  unlockedWardens,
+  type AchievementDef,
+} from "./achievements";
+export {
+  LEGENDS,
+  legendDef,
+  maybeBrandLegend,
+  dueLegendBeat,
+  resolveLegendBeat,
+} from "./legends";
+export {
+  SIGILS,
+  BANNER_COLORS,
+  randomWardenName,
+  randomKeepName,
+  randomHeraldry,
+} from "./identity";
+export { dangerScale, opportunityScale } from "./danger";
+export { type NewGameOptions } from "./state";
 export {
   createPrisoner,
   createGuard,
   createOffer,
   tierForReputation,
 } from "./factory";
+export {
+  rarityRank,
+  rollRarity,
+  prisonerRarityMods,
+  guardRarityMods,
+} from "./rarity";
+export {
+  moralityStanding,
+  moralityFactor,
+  adjustMorality,
+} from "./morality";
+export {
+  assessDangers,
+  dangerLevel,
+  riotChance,
+  fireChance,
+  diseaseChance,
+  escapeChance,
+  type DangerReport,
+} from "./danger";
 
-// ── Save / load ─────────────────────────────────────────────────────────────
-// GameState is plain JSON, so persistence is trivial and version-tagged.
-
-import type { GameState } from "./types";
-
-const SAVE_VERSION = 1;
-
-export interface SaveBlob {
-  version: number;
-  state: GameState;
-}
-
-export function serialize(state: GameState): string {
-  const blob: SaveBlob = { version: SAVE_VERSION, state };
-  return JSON.stringify(blob);
-}
-
-export function deserialize(json: string): GameState | null {
-  try {
-    const blob = JSON.parse(json) as SaveBlob;
-    if (blob.version !== SAVE_VERSION) return null;
-    return blob.state;
-  } catch {
-    return null;
-  }
-}
+export {
+  serialize,
+  deserialize,
+  SAVE_VERSION,
+  type SaveBlob,
+} from "./save";

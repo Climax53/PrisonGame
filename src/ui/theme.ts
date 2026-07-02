@@ -31,12 +31,31 @@ export const COLORS = {
     noble: 0xd9a441, // gold
   } as Record<string, number>,
 
+  // Rarity palette (the familiar game-loot spectrum), as CSS strings.
+  rarity: {
+    common: "#9aa0a6",
+    uncommon: "#5fbf60",
+    rare: "#4d8fe0",
+    epic: "#a468e0",
+    legendary: "#e0a43a",
+    mythic: "#e05a6a",
+  } as Record<string, string>,
+
   good: 0x6b8e4e,
   goodCss: "#6b8e4e",
   bad: 0xa83232,
   badCss: "#a83232",
   neutral: 0xc9b88f,
   neutralCss: "#c9b88f",
+};
+
+/** Danger-level colours for the risk indicators. */
+export const DANGER_COLOR: Record<string, number> = {
+  none: 0x3a5a3a,
+  low: 0x6b8e4e,
+  medium: 0xd9a441,
+  high: 0xd97a2a,
+  critical: 0xa83232,
 };
 
 export const FONT = {

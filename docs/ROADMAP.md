@@ -21,17 +21,33 @@ The fun is real and the foundation is professional.
 
 **Exit:** ✔ playable, tested, builds clean. You can `npm run dev` and play now.
 
-## Phase 1 — Production feel (2–4 wks)
+## Phase 1 — Production feel (2–4 wks) — *in progress*
 
 Make it *look* and *feel* shipped.
 
+- [x] **Animation & juice**: animated bars, floating number pop-ups,
+      day-transition wipe, screen-shake + colour-flash on riots/fires, tab-slide
+      transitions, button feedback (`src/ui/fx.ts`, verified in-browser)
+- [x] **"Event card" choice moments** (quell riot brutally vs. fairly; take the
+      bribe?) — deterministic decision system with telegraphed consequences
+      (`src/core/decisions.ts`)
+- [x] **Reduced-motion accessibility toggle** (respects OS `prefers-reduced-motion`)
+- [x] **Player-sentiment research** grounding the design ([docs/research](./research))
+- [x] **Rarity system** — common→mythic notoriety axis for inmates & guards,
+      tier-scaled odds (`src/core/rarity.ts`)
+- [x] **Danger forecast** — honest next-day risk bars sharing the event engine's
+      probabilities (`src/core/danger.ts`) — research directive #3
+- [x] **Morality system** — two-sided Tyrant↔Saint standing that cross-couples
+      into unrest, labour, escapes, riots, and reputation (`src/core/morality.ts`)
 - [ ] Real top-down pixel art: tileset, prisoner/guard sprites, cell interiors
       (replace programmatic placeholders — no logic changes needed)
-- [ ] Animation & juice: day-transition, event flashes, number pop-ups, haptics
 - [ ] Audio: ambient loop, event stingers, UI clicks (Howler or Phaser audio)
-- [ ] "Event card" choice moments (quell riot brutally vs. fairly; take bribe?)
-- [ ] Onboarding/tutorial first run; settings (sound, reset, credits)
-- [ ] Accessibility pass (colour-blind-safe bars, text scaling)
+- [ ] Onboarding/tutorial first run; full settings panel (sound, reset, credits)
+- [ ] Per-inmate identity (crime, temperament, remembered grudges) + name-drops
+      in the log — research directive #2
+- [ ] Danger telegraphing ("riot likely tomorrow") — research directive #3
+- [ ] Undo / honest confirms on destructive actions — research directive #7
+- [ ] Colour-blind pass + text scaling
 
 **Exit:** a stranger can install, understand, and enjoy it with no explanation.
 
