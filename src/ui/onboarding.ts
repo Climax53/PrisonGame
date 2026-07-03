@@ -31,11 +31,11 @@ const STEPS: Step[] = [
     highlight: { x: 12, y: 224, w: VIEW.width - 24, h: 142 },
   },
   {
-    text: "📜 Offers: the crown sends prisoners; you choose whom to hold. Rarer inmates pay far more — and are far more trouble. ⚒ Market: buy stores, hire warders, expand the cells.",
+    text: "📜 Offers: the crown sends prisoners; you choose whom to hold. Rarer inmates pay far more — and are far more trouble. 🔒 Cells shows who sleeps where. ⚒ Market: stores, warders, buildings.",
     highlight: { x: 0, y: 156, w: VIEW.width, h: 58 },
   },
   {
-    text: "When your dispositions are made, End Day. The night brings pay, hunger, schemes — and sometimes a choice only you can make.\n\nHold the crown's trust for 30 days at the highest tier to win your place in history.",
+    text: "The sun crosses on its own — coin and labour trickle in each hour until the 9 o'clock bell, when the keep can do no more. Then Retire for the Night: pay, hunger, schemes — and sometimes a choice only you can make.\n\nHold the crown's trust for 30 days at the highest tier to win your place in history.",
     highlight: { x: 16, y: VIEW.height - 84, w: VIEW.width - 32, h: 68 },
   },
 ];

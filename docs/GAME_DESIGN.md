@@ -51,19 +51,29 @@ dangerous labour, pocket a noble's bribe) — and every shortcut has a risk.
         │   • food, firewood, sanitation buckets        │
         │   • hire warders, expand cells                │
         ├─────────────────────────────────────────────┤
-        │  END DAY  ──►  SIMULATION TICK                │
-        │   income → wages → labour → upkeep → unrest  │
-        │   → random events → deaths → releases →      │
-        │   new offers                                 │
+        │  DAYLIGHT (6am → 9pm, real-time)             │
+        │   coin + labour output drip in hourly        │
+        │   (⏩ Skip to Evening fast-forwards)          │
+        ├─────────────────────────────────────────────┤
+        │  🌙 RETIRE FOR THE NIGHT ──► NIGHT TICK       │
+        │   wages → meals (warders first) → warmth →   │
+        │   unrest → warder morale → random events →   │
+        │   deaths → releases → new offers → dawn      │
         └────────────────────┬────────────────────────┘
                              │  consequences feed back in
                              ▼
                      (repeat, reputation trends up or down)
 ```
 
-A "turn" is one in-game **day**. The player takes any number of free actions,
-then commits with **End Day**, which runs the deterministic simulation tick
-(`advanceDay`) and surfaces the day's headline event.
+A "turn" is one in-game **day**, and the day is alive: the sun crosses on its
+own (one in-game hour ≈ 10 real seconds), with the crown's coin and the
+workshops' output accruing in hourly slices (`advanceHour` — RNG-free, so the
+real-time clock can never desync a save). At the **9pm evening bell** the keep
+can do no more; the player commits with **Retire for the Night** (`retire`),
+which runs the deterministic night resolution and surfaces the day's headline
+event. The impatient can **Skip to Evening** at any time — identical outcome
+to waiting, by construction. Each HUD resource shows its projected ±/day
+movement (`projectDay`) so tomorrow is never a mystery arithmetic problem.
 
 ---
 
@@ -114,10 +124,16 @@ mythics), giving a collection/progression hook on top of the reputation ladder.
 
 | Severity | Daily pay (base) | Unrest pressure | Sentence | Sent at tier |
 |---|---|---|---|---|
-| Petty | 6 | low | 4–8d | village+ |
-| Violent | 14 | high | 8–16d | village+ |
-| Political | 30 | med-high | 14–26d | town+ |
-| Noble | 55 | medium | 20–40d | city+ |
+| Petty | 6 | low | 10–16d | village+ |
+| Violent | 14 | high | 14–24d | village+ |
+| Political | 30 | med-high | 18–28d | town+ |
+| Noble | 55 | medium | 22–32d | city+ |
+
+Sentences deliberately sit in a **14–30-day band**: a cell, once filled, stays
+filled for weeks. Accepting a common today is a real portfolio decision — it
+may be the bunk an epic needed next week. Every inmate holds a numbered
+**cell** (lowest free, stable across days, freed bunks reused), drawn on the
+dedicated **Cells tab**; overflow beyond capacity waits in the yard.
 
 Higher severities pay far more but raise unrest and (for political/noble) can
 trigger **bribe** events. Daily pay is locked at intake and scales with your
@@ -142,8 +158,21 @@ events below.
 
 Each warder has **skill** (suppresses unrest, resolves events), **brutality**
 (suppresses unrest *fast* but adds death risk and reputation loss), a **wage**
-(paid daily — unpaid guards quit), and **fatigue** (rises on event days, lowers
-effectiveness, recovers on calm days).
+(paid daily — unpaid guards quit), **fatigue** (rises on event days, lowers
+effectiveness, recovers on calm days), and **morale** (0–100).
+
+Warders are people to manage, not stat-sticks. Each night they expect:
+
+| Need | Met by | Unmet |
+|---|---|---|
+| **Salary** | full payroll | −25 morale (plus the lowest-skill warder quits) |
+| **Food** | 1 🍖 each, served **before** the inmates | −15 morale |
+| **Quarters** | 3 base bunks; 🛏 **Barracks** adds 4 | −6 morale/night while crowded |
+| **Entertainment** | 🍺 **Tavern** | (+4 morale/night when built) |
+
+A paid, fed, housed corps gains +2 morale a night. Morale scales
+effectiveness — a miserable corps suppresses at 60% of its rested best — and
+below 25 each warder has a 35% nightly chance of handing in their keys.
 
 Guards are the player's main lever against unrest, but they are a recurring coin
 cost and a moral dial: a brutal corps keeps perfect order right up until it
@@ -280,9 +309,11 @@ free), **the famous bard** (reputation swing keyed to how the keep is run), and
 
 ## 9. UX & Controls
 
-- **One-handed, portrait, turn-based.** Tabs: **Keep / Offers / Market**, a
-  persistent top HUD (resources + reputation + net daily ledger), and a single
-  always-visible **End Day** commit button.
+- **One-handed, portrait, real-time days.** Tabs: **Keep / Cells / Offers /
+  Market**, a persistent top HUD (resources with ±/day forecast chips, the
+  hour badge, a sun-strip of daylight spent, reputation, warder bunk count),
+  and a single always-visible commit button that reads **⏩ Skip to Evening**
+  during daylight and **🌙 Retire for the Night** once the 9pm bell rings.
 - **Legibility first:** colour-coded severity swatches, health (green) and
   unrest (red) bars on every inmate, a running **Chronicle** log, and a toast
   surfacing each day's headline event.

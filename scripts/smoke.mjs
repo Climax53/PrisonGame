@@ -64,6 +64,44 @@ for (let i = 0; i < 5; i++) await endOneDay();
 
 await page.screenshot({ path: SHOT_PLAY });
 
+// ── Day/night cycle: a fresh dawn, hours that accrue coin RNG-free, and a
+// bell after which the clock refuses to move.
+const clock = await page.evaluate(() => {
+  const s = scene().state;
+  const dawnHour = s.hour;
+  const coinAtDawn = s.resources.coin;
+  scene().skipToEvening();
+  const bellHour = s.hour;
+  const coinAtBell = s.resources.coin;
+  scene().skipToEvening(); // second pull must be a no-op
+  return {
+    dawnHour,
+    bellHour,
+    lockedAtBell: s.hour === bellHour && s.resources.coin === coinAtBell,
+    accrued: coinAtBell >= coinAtDawn,
+  };
+});
+await endOneDay(); // retire from the bell — the loop must still close the day
+
+// ── Cells tab: render it and require every living inmate to hold a unique cell.
+const cells = await page.evaluate(() => {
+  scene().activeTab = "cells";
+  scene().renderAll();
+  const s = scene().state;
+  const living = s.prisoners.filter((p) => p.alive);
+  const ids = living.map((p) => p.cell);
+  return {
+    allHoused: living.every((p) => typeof p.cell === "number"),
+    unique: new Set(ids).size === ids.length,
+    rendered: scene().content.length > 0,
+  };
+});
+await page.screenshot({ path: "scripts/screenshot-cells.png" });
+await page.evaluate(() => {
+  scene().activeTab = "keep";
+  scene().renderAll();
+});
+
 // Verify the new systems are live in the running game.
 const systems = await page.evaluate(() => {
   const s = scene().state;
@@ -72,6 +110,8 @@ const systems = await page.evaluate(() => {
     prisonersHaveRarity:
       s.prisoners.length === 0 || s.prisoners.every((p) => typeof p.rarity === "string"),
     guardsHaveRarity: s.guards.every((g) => typeof g.rarity === "string"),
+    guardsHaveMorale: s.guards.every((g) => typeof g.morale === "number"),
+    barracksAndTavern: "barracks" in s.buildings && "tavern" in s.buildings,
     wardenLive: typeof s.warden === "string" && typeof s.keepName === "string",
     buildingsLive: typeof s.buildings === "object" && s.buildings !== null,
     pacingLive: ["slow", "steady", "chaos"].includes(s.pacing),
@@ -233,6 +273,14 @@ assert(errors.length === 0, `no console/page errors (saw ${errors.length})`);
 if (errors.length) errors.slice(0, 5).forEach((e) => console.log("   ↳", e));
 assert(startDay === 1, `game starts on day 1 (got ${startDay})`);
 assert(finalDay >= 6, `advanced through animated days (reached day ${finalDay})`);
+assert(clock.dawnHour === 6, `each day dawns at 6am (got hour ${clock.dawnHour})`);
+assert(clock.bellHour === 21, `skip-to-evening lands on the 9pm bell (got hour ${clock.bellHour})`);
+assert(clock.lockedAtBell, "the clock and coin lock once the bell has rung");
+assert(clock.accrued, "daylight hours accrue coin");
+assert(cells.allHoused && cells.unique, "every living inmate holds a unique cell");
+assert(cells.rendered, "the Cells tab renders");
+assert(systems.guardsHaveMorale, "warders carry morale");
+assert(systems.barracksAndTavern, "barracks and tavern are in the building roster");
 assert(raisedRiot, "a forced riot raised a decision");
 assert(modalRendered, "the decision modal rendered");
 assert(resolvedClean, "resolving the decision cleared it");

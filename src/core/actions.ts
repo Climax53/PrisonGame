@@ -10,7 +10,7 @@
 import { BALANCE } from "./balance";
 import { createGuard, tierForReputation } from "./factory";
 import { Rng } from "./rng";
-import { livingPrisoners, pushLog } from "./state";
+import { assignCells, livingPrisoners, pushLog } from "./state";
 import { wardenMods } from "./wardens";
 import type { BuildingId, GameState, PlayerAction } from "./types";
 
@@ -36,6 +36,7 @@ export function applyAction(state: GameState, action: PlayerAction): ActionResul
         return fail("Your cells are full. Build more capacity first.");
       }
       state.prisoners.push(offer.prisoner);
+      assignCells(state);
       state.resources.coin += offer.acceptBounty;
       state.offers.splice(action.offerIndex, 1);
       pushLog(

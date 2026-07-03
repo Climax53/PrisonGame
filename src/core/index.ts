@@ -7,12 +7,20 @@ export { Rng, nextRandom } from "./rng";
 export {
   createInitialState,
   emptyStats,
+  assignCells,
   pushLog,
   livingPrisoners,
   effectiveGuardSkill,
   averageBrutality,
 } from "./state";
-export { advanceDay, summarize } from "./simulation";
+export {
+  advanceDay,
+  advanceHour,
+  retire,
+  projectDay,
+  guardQuarters,
+  summarize,
+} from "./simulation";
 export { applyAction, costs, type ActionResult } from "./actions";
 export { resolveEvents, type EventResolution } from "./events";
 export {

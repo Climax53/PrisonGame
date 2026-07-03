@@ -64,6 +64,7 @@ export function createGuard(state: GameState, rng: Rng): Guard {
     brutality: rng.int(mods.brutality[0], mods.brutality[1]),
     wage: Math.max(1, Math.round(BALANCE.guards.baseWage * mods.wageMult * w.wageMult)),
     fatigue: 0,
+    morale: BALANCE.guardNeeds.moraleStart,
   };
 }
 

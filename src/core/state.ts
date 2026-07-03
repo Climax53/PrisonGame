@@ -49,6 +49,7 @@ export function createInitialState(seed: number, options: NewGameOptions = {}): 
   const warden = options.warden ?? "steward";
   const s: GameState = {
     day: 1,
+    hour: BALANCE.time.dayStartHour,
     tier: "village",
     reputation: BALANCE.start.reputation,
     morality: 0,
@@ -74,7 +75,14 @@ export function createInitialState(seed: number, options: NewGameOptions = {}): 
     keepName: "",
     heraldry: { color: 0, sigil: "🗝" },
     pacing: options.pacing ?? "steady",
-    buildings: { infirmary: false, chapel: false, gallows: false, walls: false },
+    buildings: {
+      infirmary: false,
+      chapel: false,
+      gallows: false,
+      walls: false,
+      barracks: false,
+      tavern: false,
+    },
     legendsSeen: [],
     dailyChallenge: options.dailyChallenge,
     idCounter: 0,
@@ -97,6 +105,7 @@ export function createInitialState(seed: number, options: NewGameOptions = {}): 
   }
   s.prisoners.push(createPrisoner(s, rng, "petty"));
   s.prisoners.push(createPrisoner(s, rng, "petty"));
+  assignCells(s);
 
   s.rngState = rng.state;
   s.tier = tierForReputation(s.reputation);
@@ -151,11 +160,35 @@ export function evaluateGameOver(state: GameState): void {
   if (state.gameOver) state.pendingDecision = undefined;
 }
 
-/** Average guard skill, accounting for fatigue. 0 if no guards. */
+/**
+ * Assign every living, unhoused prisoner to the lowest free cell number.
+ * Stable: prisoners keep their cell across days; freed cells are reused.
+ * Overcrowded keeps spill past cellCapacity (the UI shows those in "the yard").
+ */
+export function assignCells(state: GameState): void {
+  const used = new Set<number>();
+  for (const p of state.prisoners) {
+    if (p.alive && typeof p.cell === "number" && !used.has(p.cell)) {
+      used.add(p.cell);
+    } else if (p.alive) {
+      p.cell = undefined;
+    }
+  }
+  for (const p of state.prisoners) {
+    if (!p.alive || typeof p.cell === "number") continue;
+    let i = 0;
+    while (used.has(i)) i++;
+    p.cell = i;
+    used.add(i);
+  }
+}
+
+/** Average guard skill, accounting for fatigue AND morale. 0 if no guards.
+ * A miserable corps (morale 0) works at 60% of its rested best. */
 export function effectiveGuardSkill(state: GameState): number {
   if (state.guards.length === 0) return 0;
   const total = state.guards.reduce(
-    (sum, g) => sum + g.skill * (1 - g.fatigue / 200),
+    (sum, g) => sum + g.skill * (1 - g.fatigue / 200) * (0.6 + 0.4 * (g.morale / 100)),
     0,
   );
   return total / state.guards.length;

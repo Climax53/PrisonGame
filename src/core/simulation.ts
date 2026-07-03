@@ -1,10 +1,14 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// The day tick — the core game loop
+// The clock — the core game loop
 //
-// advanceDay() is the spine of the whole game. It runs a fixed, ordered sequence
-// of systems (income → labour → upkeep → unrest → events → deaths → release →
-// intake) and is completely deterministic given the state's rngState. Everything
-// the UI shows is a consequence of this function.
+// A day has two phases:
+//   • DAYTIME (advanceHour, 6:00→21:00): income and labour output accrue in
+//     hourly slices — RNG-free, so real-time UI ticking stays deterministic.
+//   • NIGHT (retire): the ordered resolution — wages, meals for inmates AND
+//     warders, warmth, unrest, guard morale, deaths, events, decisions,
+//     releases, intake — everything random happens here, off one RNG cursor.
+// advanceDay() remains as the "fast-forward the rest of the day, then retire"
+// wrapper the tests and bots drive.
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { BALANCE } from "./balance";
@@ -23,6 +27,7 @@ import { dueLegendBeat, maybeBrandLegend } from "./legends";
 import { wardenMods } from "./wardens";
 import { Rng } from "./rng";
 import {
+  assignCells,
   averageBrutality,
   effectiveGuardSkill,
   evaluateGameOver,
@@ -42,22 +47,59 @@ function adjustReputation(state: GameState, delta: number): void {
   state.reputation = clamp(state.reputation + scaled, R.min, R.max);
 }
 
-/** Government income: paid per living prisoner per day. */
-function collectIncome(state: GameState): number {
-  const income = state.prisoners
+/** Total government pay per full day for the current roster. */
+function dailyIncome(state: GameState): number {
+  return state.prisoners
     .filter((p) => p.alive)
     .reduce((sum, p) => sum + p.dailyPayout, 0);
-  state.resources.coin += income;
-  state.stats.totalCoinEarned += income;
-  return income;
+}
+
+/** One hour's slice of labour output (production only — strain lands at night). */
+function hourlyLaborOutput(state: GameState): Partial<Record<"coin" | "food" | "firewood" | "buckets", number>> {
+  const out: Partial<Record<"coin" | "food" | "firewood" | "buckets", number>> = {};
+  const moraleMult = laborMultiplier(state) * wardenMods(state).laborMult;
+  for (const p of state.prisoners) {
+    if (!p.alive || p.assignment === "none") continue;
+    const job = BALANCE.labor[p.assignment];
+    const efficiency = 0.5 + (p.health / 100) * 0.5;
+    const produced =
+      (job.yield / BALANCE.time.hoursPerDay) *
+      efficiency *
+      prisonerRarityMods(p.rarity).laborMult *
+      moraleMult;
+    out[job.resource] = (out[job.resource] ?? 0) + produced;
+  }
+  return out;
+}
+
+/**
+ * Advance the clock one hour. Coins drip in and workshops produce. RNG-free —
+ * safe to drive from a real-time UI timer without touching determinism.
+ * No-op once the evening bell (dayEndHour) has rung, or during a decision.
+ */
+export function advanceHour(state: GameState): GameState {
+  if (state.gameOver || state.pendingDecision) return state;
+  if (state.hour >= BALANCE.time.dayEndHour) return state;
+
+  const incomeSlice = dailyIncome(state) / BALANCE.time.hoursPerDay;
+  state.resources.coin += incomeSlice;
+  state.stats.totalCoinEarned += incomeSlice;
+
+  const produced = hourlyLaborOutput(state);
+  for (const key of Object.keys(produced) as Array<keyof typeof produced>) {
+    state.resources[key] = state.resources[key] + (produced[key] ?? 0);
+  }
+
+  state.hour += 1;
+  return state;
 }
 
 /** Pay the warders. Unpaid guards quit and stir up the cells. */
-function payWages(state: GameState): void {
+function payWages(state: GameState): boolean {
   const wages = state.guards.reduce((sum, g) => sum + g.wage, 0);
   if (state.resources.coin >= wages) {
     state.resources.coin -= wages;
-    return;
+    return true;
   }
   // Can't make payroll: spend whatever positive coin remains (never let a
   // failed payday erase existing debt), and the lowest-skill guard walks.
@@ -75,24 +117,15 @@ function payWages(state: GameState): void {
       if (p.alive) p.unrest = clamp(p.unrest + 6, 0, 100);
     }
   }
+  return false;
 }
 
-/** Conscripted labour produces resources, but costs unrest and risks injury. */
-function runLabor(state: GameState, rng: Rng): void {
-  // A cruel warden works inmates harder; a kind one lets them slack — and the
-  // warden's own doctrine (Reformer) shapes output too.
-  const moraleMult = laborMultiplier(state) * wardenMods(state).laborMult;
+/** The day's toll on the workforce: unrest and injuries from conscription.
+ * (Production itself accrued hourly during the day.) */
+function laborStrain(state: GameState, rng: Rng): void {
   for (const p of state.prisoners) {
     if (!p.alive || p.assignment === "none") continue;
     const job = BALANCE.labor[p.assignment];
-    // Output scales with health, the worker's rarity (notorious craftsmen), and
-    // how feared/respected the warden is.
-    const efficiency = 0.5 + (p.health / 100) * 0.5;
-    const produced =
-      job.yield * efficiency * prisonerRarityMods(p.rarity).laborMult * moraleMult;
-    state.resources[job.resource] = round1(
-      state.resources[job.resource] + produced,
-    );
     p.unrest = clamp(p.unrest + job.unrest, 0, 100);
     if (rng.chance(job.injuryRisk)) {
       const hurt = rng.int(10, 30);
@@ -102,13 +135,27 @@ function runLabor(state: GameState, rng: Rng): void {
   }
 }
 
-/** Feed the prisoners. Shortfall starves them. */
-function consumeFood(state: GameState): void {
+/** Feed the keep: warders eat first (they hold the keys), then the inmates.
+ * Shortfall starves prisoners and sours unfed guards. Returns guardsFed. */
+function consumeFood(state: GameState): boolean {
   const living = state.prisoners.filter((p) => p.alive);
-  const need = living.length * BALANCE.upkeep.foodPerPrisoner;
-  if (state.resources.food >= need) {
-    state.resources.food = round1(state.resources.food - need);
-    return;
+  const guardNeed = state.guards.length * BALANCE.guardNeeds.foodPerGuard;
+  const prisonerNeed = living.length * BALANCE.upkeep.foodPerPrisoner;
+
+  let guardsFed = true;
+  if (state.resources.food >= guardNeed) {
+    state.resources.food = round1(state.resources.food - guardNeed);
+  } else {
+    state.resources.food = 0;
+    guardsFed = false;
+    if (state.guards.length > 0) {
+      pushLog(state, "The warders' mess stands empty — hungry men make poor sentries.", "bad");
+    }
+  }
+
+  if (state.resources.food >= prisonerNeed) {
+    state.resources.food = round1(state.resources.food - prisonerNeed);
+    return guardsFed;
   }
   // Ration what's left; the unfed starve.
   const fed = Math.floor(state.resources.food / BALANCE.upkeep.foodPerPrisoner);
@@ -119,6 +166,47 @@ function consumeFood(state: GameState): void {
   }
   if (fed < living.length) {
     pushLog(state, `Food runs short — ${living.length - fed} go hungry.`, "bad");
+  }
+  return guardsFed;
+}
+
+/** Bunks available for the corps (base quarters + barracks). */
+export function guardQuarters(state: GameState): number {
+  return (
+    BALANCE.guardNeeds.baseQuarters +
+    (state.buildings.barracks ? BALANCE.buildings.barracks.quarters : 0)
+  );
+}
+
+/**
+ * Nightly care of the corps: morale moves with pay, food, quarters, and the
+ * tavern; the truly miserable hand in their keys.
+ */
+function updateGuardNeeds(
+  state: GameState,
+  rng: Rng,
+  guardsFed: boolean,
+  paidInFull: boolean,
+): void {
+  const N = BALANCE.guardNeeds;
+  const crowded = state.guards.length > guardQuarters(state);
+  for (const g of state.guards) {
+    let delta = paidInFull ? N.paidGain : -N.unpaidLoss;
+    if (!guardsFed) delta -= N.unfedLoss;
+    if (crowded) delta -= N.crowdedLoss;
+    if (state.buildings.tavern) delta += BALANCE.buildings.tavern.moralePerDay;
+    g.morale = clamp(g.morale + delta, 0, 100);
+  }
+  if (crowded && state.guards.length > 0) {
+    pushLog(state, "Warders grumble over shared bunks — the quarters are full.", "bad");
+  }
+  // Resignations: checked in roster order for determinism.
+  for (let i = state.guards.length - 1; i >= 0; i--) {
+    const g = state.guards[i];
+    if (g.morale < N.quitThreshold && rng.chance(N.quitChance)) {
+      state.guards.splice(i, 1);
+      pushLog(state, `${g.name} resigns — pay, bunks, or boredom, the result is the same.`, "bad");
+    }
   }
 }
 
@@ -283,22 +371,26 @@ function ageRoster(state: GameState): void {
 }
 
 /**
- * Advance the simulation by one full day. Mutates and returns the same state
- * object. A no-op while the game is over or an unresolved decision is pending
- * (the warden must answer the riot/bribe first).
+ * Retire for the night: fast-forward any remaining daylight (accruing income
+ * and labour), then resolve the night — the ordered, RNG-driven half of the
+ * loop. A no-op while the game is over or a decision awaits an answer.
  */
-export function advanceDay(state: GameState): GameState {
+export function retire(state: GameState): GameState {
   if (state.gameOver || state.pendingDecision) return state;
+
+  // Let the remaining hours of daylight pass in an instant.
+  while (state.hour < BALANCE.time.dayEndHour) advanceHour(state);
 
   const rng = new Rng(state.rngState);
   state.lastEvents = [];
+  const income = Math.round(dailyIncome(state));
 
-  const income = collectIncome(state);
-  payWages(state);
-  runLabor(state, rng);
-  consumeFood(state);
+  const paidInFull = payWages(state);
+  laborStrain(state, rng);
+  const guardsFed = consumeFood(state);
   consumeFirewood(state);
   updateUnrest(state);
+  updateGuardNeeds(state, rng, guardsFed, paidInFull);
 
   runBuildings(state);
 
@@ -317,7 +409,7 @@ export function advanceDay(state: GameState): GameState {
   state.lastEvents = events;
   if (decision) state.pendingDecision = decision;
 
-  // A held legend's story beat claims the day if nothing else did.
+  // A held legend's story beat claims the night if nothing else did.
   if (!state.pendingDecision) {
     const beat = dueLegendBeat(state);
     if (beat) state.pendingDecision = beat;
@@ -343,6 +435,7 @@ export function advanceDay(state: GameState): GameState {
 
   sweepRoster(state);
   ageRoster(state);
+  assignCells(state); // freed bunks are reusable at dawn
 
   // Winter thaws one day at a time.
   if (state.winterDaysLeft > 0) state.winterDaysLeft -= 1;
@@ -360,11 +453,12 @@ export function advanceDay(state: GameState): GameState {
   generateOffers(state, rng);
 
   state.day += 1;
+  state.hour = BALANCE.time.dayStartHour;
   state.rngState = rng.state;
 
   pushLog(
     state,
-    `Day ${state.day - 1} closes. +${income} coin earned${
+    `Day ${state.day - 1} closes. ~${income} coin earned${
       released ? `, ${released} freed` : ""
     }.`,
     anyDeaths ? "bad" : "neutral",
@@ -372,6 +466,52 @@ export function advanceDay(state: GameState): GameState {
 
   evaluateGameOver(state);
   return state;
+}
+
+/**
+ * Advance one full day: the compatibility wrapper the tests and bot harness
+ * drive — remaining daylight fast-forwards, then the night resolves.
+ */
+export function advanceDay(state: GameState): GameState {
+  return retire(state);
+}
+
+/**
+ * The honest ledger for tomorrow-you: expected net movement of each resource
+ * over a full day, given today's roster/assignments/buildings. Deterministic
+ * expectation — random events are deliberately excluded (that is what the
+ * danger forecast is for).
+ */
+export function projectDay(state: GameState): {
+  coin: number;
+  food: number;
+  firewood: number;
+  buckets: number;
+} {
+  const moraleMult = laborMultiplier(state) * wardenMods(state).laborMult;
+  const production = { coin: 0, food: 0, firewood: 0, buckets: 0 };
+  for (const p of state.prisoners) {
+    if (!p.alive || p.assignment === "none") continue;
+    const job = BALANCE.labor[p.assignment];
+    const efficiency = 0.5 + (p.health / 100) * 0.5;
+    production[job.resource] +=
+      job.yield * efficiency * prisonerRarityMods(p.rarity).laborMult * moraleMult;
+  }
+  const living = livingPrisoners(state);
+  const wages = state.guards.reduce((s, g) => s + g.wage, 0);
+  const winterMult = state.winterDaysLeft > 0 ? 2 : 1;
+  return {
+    coin: Math.round(dailyIncome(state) + production.coin - wages),
+    food: round1(
+      production.food -
+        living * BALANCE.upkeep.foodPerPrisoner -
+        state.guards.length * BALANCE.guardNeeds.foodPerGuard,
+    ),
+    firewood: round1(
+      production.firewood - living * BALANCE.upkeep.firewoodPerPrisoner * winterMult,
+    ),
+    buckets: round1(production.buckets),
+  };
 }
 
 /** Exposed for tests and UI: the current loss-condition snapshot. */
