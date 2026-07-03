@@ -83,6 +83,24 @@ const clock = await page.evaluate(() => {
 });
 await endOneDay(); // retire from the bell — the loop must still close the day
 
+// ── The clock advances on its own: with no interaction at all, the in-game
+// hour must tick forward (real-time timer). We shorten the wait by asserting
+// the live countdown helpers produce sane values rather than idling ~10s.
+const autoClock = await page.evaluate(() => {
+  const sc = scene();
+  const s = sc.state;
+  s.hour = 6; // reset to dawn
+  const ms = sc.msToEvening();
+  const frac = sc.dayFraction();
+  sc.updateClock(); // must not throw and must set the label text
+  const label = sc.clockLabel;
+  return {
+    countdownPositive: ms > 0 && ms <= 16 * 10_000,
+    fracInRange: frac >= 0 && frac <= 1,
+    labelHasText: !!(label && typeof label.text === "string" && label.text.length > 0),
+  };
+});
+
 // ── Cells tab: render it and require every living inmate to hold a unique cell.
 const cells = await page.evaluate(() => {
   scene().activeTab = "cells";
@@ -279,6 +297,9 @@ assert(clock.lockedAtBell, "the clock and coin lock once the bell has rung");
 assert(clock.accrued, "daylight hours accrue coin");
 assert(cells.allHoused && cells.unique, "every living inmate holds a unique cell");
 assert(cells.rendered, "the Cells tab renders");
+assert(autoClock.countdownPositive, "the countdown-to-dusk reports a sane duration");
+assert(autoClock.fracInRange, "the day-fraction (sun-strip) stays in [0,1]");
+assert(autoClock.labelHasText, "the live clock label renders text");
 assert(systems.guardsHaveMorale, "warders carry morale");
 assert(systems.barracksAndTavern, "barracks and tavern are in the building roster");
 assert(raisedRiot, "a forced riot raised a decision");

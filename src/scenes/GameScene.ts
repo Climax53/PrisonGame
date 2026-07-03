@@ -86,6 +86,11 @@ export class GameScene extends Phaser.Scene {
   private confirmDismissId: string | null = null;
   /** Re-entrancy guard: true while the day-wipe/tick is in flight. */
   private dayInFlight = false;
+  /** The looping hour timer — queried for smooth between-tick countdowns. */
+  private hourTimer!: Phaser.Time.TimerEvent;
+  /** Live HUD elements updated between renders by the display ticker. */
+  private clockLabel?: Phaser.GameObjects.Text;
+  private sunFill?: Phaser.GameObjects.Rectangle;
 
   constructor() {
     super("GameScene");
@@ -97,13 +102,20 @@ export class GameScene extends Phaser.Scene {
     this.content = this.add.container(0, 0);
     this.modalLayer = this.add.container(0, 0).setDepth(800);
     this.juice = new Juice(this);
-    // The living clock: an in-game hour passes every HOUR_REAL_MS. Coin and
-    // labour drip in hourly; at the evening bell progress stops until the
-    // player retires for the night.
-    this.time.addEvent({
+    // The living clock: an in-game hour passes on its own every HOUR_REAL_MS —
+    // the player never has to advance it. Coin and labour drip in hourly; at
+    // the evening bell progress stops until the player retires for the night.
+    this.hourTimer = this.time.addEvent({
       delay: HOUR_REAL_MS,
       loop: true,
       callback: () => this.tickHour(),
+    });
+    // A lightweight, presentation-only ticker: glides the sun-strip and counts
+    // down the minutes to nightfall in the gaps between hour ticks.
+    this.time.addEvent({
+      delay: 100,
+      loop: true,
+      callback: () => this.updateClock(),
     });
     void this.bootstrap();
   }
@@ -122,6 +134,51 @@ export class GameScene extends Phaser.Scene {
       // The bell has rung — swap the bottom bar to "Retire for the Night".
       this.renderContent();
       this.toast("🌙 The evening bell rings. The keep can do no more today.", COLORS.goldCss);
+    }
+  }
+
+  /** Real milliseconds until the 9pm bell, blending the current partial hour
+   * (from the live timer) with the whole hours still to come. */
+  private msToEvening(): number {
+    const remainingThisHour = this.hourTimer ? this.hourTimer.getRemaining() : HOUR_REAL_MS;
+    const fullHoursLeft = Math.max(0, BALANCE.time.dayEndHour - this.state.hour - 1);
+    return remainingThisHour + fullHoursLeft * HOUR_REAL_MS;
+  }
+
+  /** Fraction of the working day elapsed (0 at dawn → 1 at the bell), gliding
+   * smoothly through each hour so the sun-strip never jumps. */
+  private dayFraction(): number {
+    const s = this.state;
+    const T = BALANCE.time;
+    if (s.hour >= T.dayEndHour) return 1;
+    const paused = s.gameOver || !!s.pendingDecision || this.dayInFlight;
+    const partial =
+      paused || !this.hourTimer
+        ? 0
+        : Math.max(0, Math.min(1, 1 - this.hourTimer.getRemaining() / HOUR_REAL_MS));
+    return Math.max(0, Math.min(1, (s.hour - T.dayStartHour + partial) / T.hoursPerDay));
+  }
+
+  /** Refresh only the live clock elements — cheap enough to run several times a
+   * second without rebuilding the HUD. */
+  private updateClock(): void {
+    const s = this.state;
+    if (!s) return;
+    const label = this.clockLabel;
+    if (label && label.active) {
+      if (s.hour >= BALANCE.time.dayEndHour) {
+        label.setText("🌙 nightfall");
+        label.setColor(COLORS.steelCss);
+      } else if (s.gameOver || s.pendingDecision || this.dayInFlight) {
+        label.setText(`⏸ ${hourLabel(s.hour)}`);
+        label.setColor(COLORS.neutralCss);
+      } else {
+        label.setText(`⏳ ${fmtCountdown(this.msToEvening())} to dusk`);
+        label.setColor(COLORS.goldCss);
+      }
+    }
+    if (this.sunFill && this.sunFill.active) {
+      this.sunFill.width = VIEW.width * this.dayFraction();
     }
   }
 
@@ -300,7 +357,8 @@ export class GameScene extends Phaser.Scene {
       }
     });
 
-    // Reputation bar — animates from the previously displayed value.
+    // Reputation bar — animates from the previously displayed value. Shortened
+    // to leave room for the live countdown-to-dusk clock on its right.
     this.hud.add(
       this.add.text(16, 104, "Reputation", {
         fontFamily: FONT.family,
@@ -308,7 +366,7 @@ export class GameScene extends Phaser.Scene {
         color: COLORS.neutralCss,
       }),
     );
-    const repBar = makeBar(this, 16, 124, VIEW.width - 32, 16, s.reputation / 100, COLORS.gold);
+    const repBar = makeBar(this, 16, 124, VIEW.width - 32 - 150, 16, s.reputation / 100, COLORS.gold);
     this.hud.add(repBar);
     if (this.animateReputationFrom !== null) {
       const fill = repBar.getData("fill") as Phaser.GameObjects.Rectangle;
@@ -316,6 +374,15 @@ export class GameScene extends Phaser.Scene {
       this.juice.tweenBar(fill, this.animateReputationFrom / 100, s.reputation / 100, full);
       this.animateReputationFrom = null;
     }
+    // Live countdown to nightfall — the visible proof the day runs on its own.
+    this.clockLabel = this.add
+      .text(VIEW.width - 16, 132, "", {
+        fontFamily: FONT.family,
+        fontSize: "16px",
+        color: COLORS.goldCss,
+      })
+      .setOrigin(1, 0.5);
+    this.hud.add(this.clockLabel);
 
     // Corps-at-a-glance: how many warders, and whether the bunks hold them.
     const bunks = guardQuarters(s);
@@ -336,11 +403,10 @@ export class GameScene extends Phaser.Scene {
       Math.min(1, (s.hour - BALANCE.time.dayStartHour) / BALANCE.time.hoursPerDay),
     );
     this.hud.add(this.add.rectangle(0, 145, VIEW.width, 5, COLORS.shadow).setOrigin(0, 0));
-    this.hud.add(
-      this.add
-        .rectangle(0, 145, VIEW.width * dayFrac, 5, evening ? COLORS.steel : COLORS.gold)
-        .setOrigin(0, 0),
-    );
+    this.sunFill = this.add
+      .rectangle(0, 145, VIEW.width * dayFrac, 5, evening ? COLORS.steel : COLORS.gold)
+      .setOrigin(0, 0);
+    this.hud.add(this.sunFill);
 
     // Tab bar.
     const tabs: Array<[Tab, string]> = [
@@ -370,6 +436,9 @@ export class GameScene extends Phaser.Scene {
         }),
       );
     });
+
+    // Populate the live clock immediately (both fields now exist).
+    this.updateClock();
   }
 
   // ── Content ──────────────────────────────────────────────────────────────
@@ -622,6 +691,9 @@ export class GameScene extends Phaser.Scene {
     const next = LABOR_CYCLE[(idx + 1) % LABOR_CYCLE.length];
     applyAction(this.state, { type: "assignLabor", prisonerId: p.id, assignment: next });
     this.persist();
+    // Re-task changes the day's projected yield, so refresh the HUD forecast
+    // chips too — not just the prisoner card badge.
+    this.renderHud();
     this.renderContent();
   }
 
@@ -1430,6 +1502,14 @@ function hourLabel(h: number): string {
   if (h === 12) return "noon";
   if (h === 0 || h === 24) return "midnight";
   return h < 12 ? `${h}am` : `${h - 12}pm`;
+}
+
+/** Milliseconds → "m:ss" for the countdown-to-dusk clock. */
+function fmtCountdown(ms: number): string {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
 /** Clip a string to `max` chars with an ellipsis (single-line layouts). */
