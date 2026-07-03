@@ -19,7 +19,7 @@
 |---|---|---|
 | **Style** | 2D pixel art, "high-bit" (SNES-to-modern-indie register, à la Stardew/Wildermyth-pixel) | Matches references; readable at phone scale; commissionable |
 | **Camera** | **Straight top-down for the keep view; ¾ front-facing for portraits; no isometric** | Locked in ART_DIRECTION.md — one-handed portrait readability |
-| **Logical canvas** | 720 × 1280 portrait (Phaser FIT-scaled) | Already implemented |
+| **Logical canvas** | 720 × 1280 portrait (Phaser FIT-scaled). **Desktop/Steam builds add a 1280 × 720 landscape layout — see §10** | Portrait ships first; landscape is the Steam target |
 | **Tile grid** | **32 × 32 px** | Standard, cheap, crisp at 2× |
 | **Portrait sizes** | 96 × 96 px (roster/cards), 192 × 192 px (decision modals & select screens) | Two sizes only; artist draws at 192 and reduces |
 | **Palette** | The shipped theme (`src/ui/theme.ts`): parchment `#e8d8b0`, panel woods `#2b2118/#3a2d20`, gold `#d9a441`, blood `#a83232`, moss `#6b8e4e`, steel `#8a94a0`, royal `#6a5acd` + rarity spectrum (`#9aa0a6 → #5fbf60 → #4d8fe0 → #a468e0 → #e0a43a → #e05a6a`) | Everything already on screen uses it; new art must harmonize |
@@ -326,6 +326,87 @@ Cheaper paths that stay professional: license a cohesive medieval pixel pack
 for tiles/VFX (~$50–150) and commission only portraits + key art (the
 identity-bearing 30%); use curated SFX packs and commission only the theme.
 
+## 9a. Desktop / Steam resolution requirements (NEW — plan for the PC build)
+
+The game will ship on Steam as well as mobile. Steam players run **landscape
+monitors at far higher pixel densities than phones**, and Valve mandates a set
+of exact store-graphic sizes. Every asset commissioned from here on must be
+authored so it survives the jump to desktop — this section is binding on the
+artist alongside §0.
+
+### 9a.1 In-game target resolutions
+
+Desktop renders in **16:9 landscape** (the current 720×1280 portrait is the
+mobile layout; the PC layout is a separate arrangement of the same widgets and
+art — see §10 for the engineering plan). Author and test art against this
+ladder:
+
+| Tier | Resolution | Aspect | Notes |
+|---|---|---|---|
+| **Minimum** | 1280 × 720 | 16:9 | Steam's floor; the landscape logical canvas |
+| **Baseline** | 1920 × 1080 | 16:9 | The resolution ~60% of Steam users run — tune for this |
+| **High** | 2560 × 1440 | 16:9 | 1440p; assets must stay crisp |
+| **4K** | 3840 × 2160 | 16:9 | Integer 3× of 1280×720 — pixel art stays sharp |
+| **Ultrawide** | 3440 × 1440 / 2560 × 1080 | 21:9 | Do **not** stretch; pillar the play-field, extend the stone-wall backdrop into the margins |
+
+**Rule for pixel art:** the logical landscape canvas is **1280 × 720**, scaled
+by whole-number factors to 1440p (2×) and 4K (3×) so hard pixels never blur.
+1080p is a 1.5× non-integer scale — for that tier only, either accept minor
+softening or supply a 1920-native UI layer (see multipliers below). Never
+upscale below native; author at the highest tier and downscale.
+
+### 9a.2 Asset resolution multipliers
+
+Deliver identity-bearing raster art (portraits, exteriors, key art, capsules)
+at the **@4x master** and let the build downscale. Tiles and UI sprites, being
+pixel-perfect, ship at their native grid and scale by integer only.
+
+| Asset class | Mobile (ships now) | Desktop master to add |
+|---|---|---|
+| Portraits (96/192) | 192 master | **384 (@2x) master** — crisp on 1440p cards |
+| Keep tileset (32×32) | 32 native | unchanged — integer-scaled by the renderer |
+| Keep exteriors (640×360) | 640×360 | **1920 × 1080 master** (3×) for the desktop vista card |
+| Card banners / modal headers | mobile width | **2× width master** |
+| Icons (44 UI glyphs) | 32–48 px | **SVG or 96 px master** — UI chrome is densest on desktop |
+| Key art | 1280×720 | **3840 × 2160 master** (doubles as Steam library hero source) |
+
+### 9a.3 Steam store & client graphics (Valve-mandated exact sizes)
+
+These are **store-page requirements**, not in-game art — but they reuse the key
+art and exterior/portrait library, so commission them from the same hand for a
+coherent page. All PNG (logos transparent); capsules must carry the game logo
+legibly at the smallest size.
+
+| Steam asset | Exact size | Purpose |
+|---|---|---|
+| Small capsule | 231 × 87 | Search results, lists, recommendations |
+| Header capsule | 460 × 215 | Top of the store page, wishlist emails |
+| Main capsule | 616 × 353 | Featured banners at the top of the store |
+| Vertical capsule | 374 × 448 | "New & Trending" and daily-deal columns |
+| Page background | 1438 × 810 | Store-page backdrop (edges fade to the theme) |
+| Library capsule | 600 × 900 | The player's own library grid (portrait poster) |
+| Library header | 460 × 215 | Library detail header |
+| Library hero | 3840 × 1240 | Wide banner behind the library detail page |
+| Library logo | 1280 × 720 | Transparent logo overlaid on the hero |
+| Community icon | 184 × 184 | Groups, badges, avatars |
+| Client icon | 32 × 32 (`.ico`/`.tga`) | Desktop taskbar / library list |
+| Screenshots | 1920 × 1080 | Min 5; 16:9; the actual landscape build, no mock frames |
+| Trailer | 1920 × 1080, H.264 | ≥30 s; required for wishlisting momentum |
+
+### 9a.4 What this means for animations
+
+- Author sprite-sheet frames at the **@2x/@4x master** where the sprite is
+  raster-detailed (portrait idle blinks, decision-card flourishes); integer
+  pixel sprites (torch flicker, walking guards) stay native and scale by whole
+  factors only.
+- Desktop runs at 60 fps on capable hardware — animations may specify **higher
+  frame counts** for the PC tier (e.g. a 6-frame mobile torch → 12-frame
+  desktop variant) where budget allows; the loader picks the sheet per platform.
+- Keep all timing in **milliseconds, not frame counts**, so a 24 fps mobile
+  loop and a 60 fps desktop loop read at the same speed.
+
+---
+
 ## 9. Integration map (for whoever wires it in)
 
 - Portraits → `buildPrisonerCard` / offers / setup carousel / HUD chip
@@ -337,3 +418,35 @@ identity-bearing 30%); use curated SFX packs and commission only the theme.
   crossfade reads `assessDangers()` — the forecast already exposes it
 - Everything loads through one `preload()` manifest; missing files fall back
   to current placeholders, so art can land incrementally
+
+---
+
+## 10. Desktop layout engineering (the landscape build — the Steam target)
+
+The simulation core is already resolution-agnostic — it has no idea how it's
+drawn. Reaching Steam is therefore a **view-layer** job, not a rewrite. The plan
+(not yet built; flagged here so the art above is authored to fit it):
+
+1. **Two logical canvases, one scene.** Keep 720 × 1280 portrait for
+   touch/mobile; add a 1280 × 720 landscape arrangement for desktop. Detect at
+   boot (`window.innerWidth > innerHeight`, or a Capacitor/Electron platform
+   flag) and pick a layout constant bundle. Phaser `Scale.FIT` +
+   `autoCenter` already letterboxes cleanly; only the widget coordinates change.
+2. **Landscape composition.** The portrait build stacks HUD → tabs → content
+   vertically. Landscape has room to **retire the tab bar**: put the living-keep
+   / cell-block view on the left two-thirds and a persistent right rail
+   (resources with forecast chips, the countdown clock, offers, market) — closer
+   to a management-sim desktop UI. Same widgets (`makePanel`/`makeButton`/
+   `makeBar`), new coordinates.
+3. **Ultrawide (21:9):** pill-box the play-field to 16:9 and let the stone-wall
+   backdrop bleed into the side margins (never stretch gameplay).
+4. **Input:** add mouse hover states (buttons already have `pointerover`) and
+   keyboard shortcuts (Space = Skip to Evening / Retire, 1–4 = tabs, Esc =
+   close modal). Touch handlers stay untouched.
+5. **Packaging:** wrap the same web build with **Electron** (or Steam's preferred
+   `steamworks.js`) for the desktop binary; the mobile Capacitor wrappers are
+   unaffected. Steam overlay, achievements, and Cloud saves map onto the
+   existing `profile.ts` / save system.
+
+None of this blocks mobile launch; it's a parallel view target. The art in §9a
+is specified so that when this layout lands, no asset has to be redrawn.

@@ -1,8 +1,28 @@
 # Changelog
 
-## Unreleased — "The Living Day" cycle (playtest round 1)
+## Unreleased — "The Living Day" cycle (playtest rounds 1–2)
 
-### Added
+### Added (round 2)
+- **The day advances on its own.** A live, presentation-only ticker now glides
+  the sun-strip and shows a **countdown to nightfall** (`⏳ m:ss to dusk`) beside
+  the reputation bar — the passage of time is visible without the player
+  touching anything. After the bell it reads `🌙 nightfall`; while a decision
+  is pending it shows `⏸`. Built from the hour timer's live remaining time, so
+  it stays in lockstep with the deterministic core.
+- **Steam / desktop resolution requirements** folded into the art pipeline
+  (`docs/ART_AUDIO_SPEC.md` §9a–§10, `docs/RELEASE_PLAN.md`): in-game landscape
+  target ladder (1280×720 → 4K, incl. 21:9 ultrawide), asset resolution
+  multipliers, the full set of Valve-mandated Steam capsule/library/screenshot
+  sizes, an animation-authoring note, and a landscape-layout engineering plan +
+  Steam release track (the $100 Steam Direct fee flagged). No asset above has
+  to be redrawn when the PC layout lands.
+
+### Fixed (round 2)
+- **Forecast chips now update live** when you re-task a prisoner: `cycleLabor`
+  refreshes the HUD, not just the card, so the ±/day numbers move the instant
+  you change a job (previously stale until the next hour tick).
+
+### Added (round 1)
 - **Day/night cycle** (`advanceHour`/`retire` in `src/core/simulation.ts`):
   the sun crosses on its own — one in-game hour every 10 real seconds, from
   6am to the 9pm evening bell. Coin and labour output accrue in hourly

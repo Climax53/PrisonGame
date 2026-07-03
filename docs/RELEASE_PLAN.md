@@ -119,3 +119,36 @@ tutorial uses Capacitor. Mitigations we already satisfy: everything bundled
 - **Before IAP ships:** Apple Small Business Program + Google 15% tier enrollment.
 - **Each Apple major-OS release:** retest WebGL performance on hardware
   (historic WKWebView regressions, e.g. the iOS 15 canvas flag).
+
+---
+
+## Steam (PC) track — planned, parallel to mobile
+
+The user wants a Steam release once the game is developed further. It runs on
+the **same web build**, wrapped for desktop — no engine change. Tracked here so
+the art pipeline (see `ART_AUDIO_SPEC.md` §9a–§10) is authored for it now.
+
+**Prerequisites (money — needs the user, not code):**
+- **Steamworks partner fee: $100 per app** (the "Steam Direct" recoupable
+  deposit), one-time. This is the one hard cost gate; flag before store setup.
+- A bank/tax profile in Steamworks (US W-9 / tax interview), like the mobile
+  stores.
+
+**Engineering (code-complete → Steam-ready):**
+| # | Task | Est. |
+|---|---|---|
+| 1 | Landscape 1280×720 layout bundle + right-rail UI (ART_AUDIO_SPEC §10) | 3–4d |
+| 2 | Mouse hover + keyboard shortcuts (Space/1–4/Esc) | 1d |
+| 3 | Electron (or `steamworks.js`) desktop wrapper + build pipeline | 1–2d |
+| 4 | Resolution/aspect handling incl. 21:9 pillarboxing; 1080p/1440p/4K QA | 1–2d |
+| 5 | Steam overlay + Cloud saves mapped onto `profile.ts`/save system | 1d |
+| 6 | (Optional) Steam Achievements mirrored from the in-game achievement set | 0.5d |
+
+**Store graphics:** the exact Valve-mandated capsule/library/screenshot sizes
+live in `ART_AUDIO_SPEC.md` §9a.3 — commissioned from the same artist as the
+mobile key art for a coherent page.
+
+**Store-page timing:** Steam rewards a **wishlist runway** — set up the "Coming
+Soon" page ~1–3 months before launch and drive wishlists; they convert to
+day-one sales and visibility. Budget that lead time separately from the mobile
+submission windows above.
