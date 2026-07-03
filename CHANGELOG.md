@@ -1,5 +1,53 @@
 # Changelog
 
+## Unreleased — "The Living Day" cycle (playtest round 1)
+
+### Added
+- **Day/night cycle** (`advanceHour`/`retire` in `src/core/simulation.ts`):
+  the sun crosses on its own — one in-game hour every 10 real seconds, from
+  6am to the 9pm evening bell. Coin and labour output accrue in hourly
+  slices (RNG-free, so real-time ticking can never desync a save); after the
+  bell no more progress is possible until the player **Retires for the
+  Night**, which resolves wages, meals, warmth, unrest, morale, events, and
+  intake in the fixed nightly order. "⏩ Skip to Evening" fast-forwards the
+  remaining daylight. The HUD shows an hour badge and a sun-strip of
+  daylight spent; `advanceDay()` remains the full-day wrapper the tests and
+  bot harness drive.
+- **Resource forecast chips** (`projectDay`): each HUD resource now carries
+  a small ±/day indicator — the deterministic expected daily movement given
+  today's roster, assignments, wages, and buildings (random events
+  deliberately excluded; the danger bars cover those).
+- **Cells tab**: the block drawn cell by cell — every inmate's bunk numbered
+  and visible, tap an occupant to re-task them; over-capacity inmates wait
+  in "the Yard". Cell numbers also appear on Keep-tab prisoner cards.
+  Assignment is stable: lowest free cell, kept across days, freed bunks
+  reused (`assignCells` in `src/core/state.ts`).
+- **Warder needs & morale** (`updateGuardNeeds`): warders now eat first from
+  the larder, expect pay, need bunks (3 base; **🛏 Barracks** adds 4), and
+  enjoy the **🍺 Tavern** (+4 morale/day). Unpaid, unfed, or crowded corps
+  sour; morale under 25 risks a resignation each night; morale scales guard
+  effectiveness (a miserable corps suppresses at 60% of its rested best).
+  Morale faces and bunk counts shown in the Market roster and HUD.
+- Test suite 141 → 160 (`test/time-guards-cells.test.ts`: hour-clock
+  determinism incl. exact hour-by-hour ≡ advanceDay equality, guard needs,
+  cell invariants, forecast-matches-reality, sentence bands, v4→v5
+  migration). Browser smoke now proves dawn hour, bell lock, hourly accrual,
+  unique cells, morale, and the Cells tab render.
+
+### Changed
+- **Sentences lengthened** to a 14–30-day band (petty 10–16, violent 14–24,
+  political 18–28, noble 22–32): holding a common now occupies a cell for
+  weeks, so intake becomes a real portfolio choice when an epic might knock.
+- Save format bumped to **v5** (hour, guard morale, prisoner cells,
+  barracks/tavern) with v4 migration + repair defaults.
+- Market tab compacted (provisions and muster rows) to fit the two new
+  buildings; guard roster rows show morale.
+
+### Fixed
+- Chronicle entries no longer overlap the rows beneath the prisoner list:
+  one entry per line, clipped with an ellipsis instead of wrapping into the
+  next row's 20px pitch.
+
 ## Unreleased — "Wardens, Legends & the Crown's Whim" cycle (Tiers 1–2)
 
 ### Added

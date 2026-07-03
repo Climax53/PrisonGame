@@ -10,6 +10,7 @@
 import Phaser from "phaser";
 import {
   advanceDay,
+  advanceHour,
   applyAction,
   applyDecision,
   assessDangers,
@@ -18,8 +19,10 @@ import {
   createInitialState,
   dangerLevel,
   endingFor,
+  guardQuarters,
   livingPrisoners,
   moralityStanding,
+  projectDay,
   RARITY_ORDER,
   summarize,
   type GameState,
@@ -42,7 +45,11 @@ interface Vitals {
   reputation: number;
 }
 
-type Tab = "keep" | "offers" | "market";
+type Tab = "keep" | "cells" | "offers" | "market";
+
+/** Real milliseconds per in-game hour. One 15-hour day ≈ 2½ minutes of play —
+ * the sun crosses on its own; the player only decides when to retire. */
+const HOUR_REAL_MS = 10_000;
 
 const LABOR_CYCLE: LaborAssignment[] = [
   "none",
@@ -90,7 +97,32 @@ export class GameScene extends Phaser.Scene {
     this.content = this.add.container(0, 0);
     this.modalLayer = this.add.container(0, 0).setDepth(800);
     this.juice = new Juice(this);
+    // The living clock: an in-game hour passes every HOUR_REAL_MS. Coin and
+    // labour drip in hourly; at the evening bell progress stops until the
+    // player retires for the night.
+    this.time.addEvent({
+      delay: HOUR_REAL_MS,
+      loop: true,
+      callback: () => this.tickHour(),
+    });
     void this.bootstrap();
+  }
+
+  /** One real-time hour tick. RNG-free in the core, so letting the timer run
+   * can never desync a save. A no-op after the evening bell or mid-crisis. */
+  private tickHour(): void {
+    const s = this.state;
+    if (!s || s.gameOver || s.pendingDecision || this.dayInFlight) return;
+    if (s.hour >= BALANCE.time.dayEndHour) return;
+    advanceHour(s);
+    this.persist();
+    this.displayed.coin = s.resources.coin;
+    this.renderHud();
+    if (s.hour >= BALANCE.time.dayEndHour) {
+      // The bell has rung — swap the bottom bar to "Retire for the Night".
+      this.renderContent();
+      this.toast("🌙 The evening bell rings. The keep can do no more today.", COLORS.goldCss);
+    }
   }
 
   /**
@@ -199,8 +231,9 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(1, 0);
     this.hud.add([title, tierLabel]);
 
-    // Active-condition badges: harsh winter, victory countdown at crown tier.
-    const badges: string[] = [];
+    // Active-condition badges: the clock first, then winter/victory countdowns.
+    const evening = s.hour >= BALANCE.time.dayEndHour;
+    const badges: string[] = [`${evening ? "🌙" : "☀"} ${hourLabel(s.hour)}`];
     if (s.winterDaysLeft > 0) badges.push(`❄ winter ${s.winterDaysLeft}d`);
     if (s.tier === "crown" && !s.gameOver) {
       badges.push(`👑 ${BALANCE.victory.crownDaysRequired - s.crownDays}d to glory`);
@@ -231,24 +264,40 @@ export class GameScene extends Phaser.Scene {
       }),
     );
 
-    // Resource row.
-    const chips: Array<[string, string, string]> = [
-      ["🪙", `${Math.round(r.coin)}`, COLORS.goldCss],
-      ["🍖", `${round1(r.food)}`, COLORS.parchmentCss],
-      ["🪵", `${round1(r.firewood)}`, COLORS.parchmentCss],
-      ["🪣", `${round1(r.buckets)}`, COLORS.parchmentCss],
-      ["👤", `${sum.living}/${s.cellCapacity}`, COLORS.parchmentCss],
+    // Resource row, each with tomorrow-you's expected daily movement beneath —
+    // the honest ledger (events excluded; the danger bars cover those).
+    const fc = projectDay(s);
+    const chips: Array<[string, string, string, number | null]> = [
+      ["🪙", `${Math.round(r.coin)}`, COLORS.goldCss, fc.coin],
+      ["🍖", `${round1(r.food)}`, COLORS.parchmentCss, fc.food],
+      ["🪵", `${round1(r.firewood)}`, COLORS.parchmentCss, fc.firewood],
+      ["🪣", `${round1(r.buckets)}`, COLORS.parchmentCss, fc.buckets],
+      ["👤", `${sum.living}/${s.cellCapacity}`, COLORS.parchmentCss, null],
     ];
     const chipW = VIEW.width / chips.length;
-    chips.forEach(([icon, val, color], i) => {
-      const t = this.add
-        .text(i * chipW + chipW / 2, 64, `${icon}${val}`, {
-          fontFamily: FONT.family,
-          fontSize: "22px",
-          color,
-        })
-        .setOrigin(0.5, 0);
-      this.hud.add(t);
+    chips.forEach(([icon, val, color, delta], i) => {
+      const cx = i * chipW + chipW / 2;
+      this.hud.add(
+        this.add
+          .text(cx, 58, `${icon}${val}`, {
+            fontFamily: FONT.family,
+            fontSize: "22px",
+            color,
+          })
+          .setOrigin(0.5, 0),
+      );
+      if (delta !== null) {
+        const d = Math.round(delta * 10) / 10;
+        this.hud.add(
+          this.add
+            .text(cx, 84, `${d > 0 ? "+" : ""}${d}/d`, {
+              fontFamily: FONT.family,
+              fontSize: "13px",
+              color: d > 0 ? COLORS.goodCss : d < 0 ? COLORS.badCss : COLORS.neutralCss,
+            })
+            .setOrigin(0.5, 0),
+        );
+      }
     });
 
     // Reputation bar — animates from the previously displayed value.
@@ -268,21 +317,35 @@ export class GameScene extends Phaser.Scene {
       this.animateReputationFrom = null;
     }
 
-    // Net daily ledger hint.
-    const net = sum.dailyIncome - sum.dailyWages;
+    // Corps-at-a-glance: how many warders, and whether the bunks hold them.
+    const bunks = guardQuarters(s);
+    const crowded = s.guards.length > bunks;
     this.hud.add(
       this.add
-        .text(VIEW.width - 16, 100, `${net >= 0 ? "+" : ""}${net}/day`, {
+        .text(VIEW.width - 16, 100, `⚔${s.guards.length}  🛏${s.guards.length}/${bunks}`, {
           fontFamily: FONT.family,
           fontSize: "18px",
-          color: net >= 0 ? COLORS.goodCss : COLORS.badCss,
+          color: crowded ? COLORS.badCss : COLORS.goodCss,
         })
         .setOrigin(1, 0),
+    );
+
+    // A thin sun-strip along the banner's foot: how much daylight remains.
+    const dayFrac = Math.max(
+      0,
+      Math.min(1, (s.hour - BALANCE.time.dayStartHour) / BALANCE.time.hoursPerDay),
+    );
+    this.hud.add(this.add.rectangle(0, 145, VIEW.width, 5, COLORS.shadow).setOrigin(0, 0));
+    this.hud.add(
+      this.add
+        .rectangle(0, 145, VIEW.width * dayFrac, 5, evening ? COLORS.steel : COLORS.gold)
+        .setOrigin(0, 0),
     );
 
     // Tab bar.
     const tabs: Array<[Tab, string]> = [
       ["keep", "🏰 Keep"],
+      ["cells", "🔒 Cells"],
       ["offers", `📜 Offers (${s.offers.length})`],
       ["market", "⚒ Market"],
     ];
@@ -295,7 +358,7 @@ export class GameScene extends Phaser.Scene {
           width: tabW,
           height: 56,
           label,
-          fontSize: 20,
+          fontSize: 18,
           fill: this.activeTab === tab ? COLORS.gold : COLORS.panelLight,
           textColor: this.activeTab === tab ? COLORS.inkCss : COLORS.parchmentCss,
           onTap: () => {
@@ -319,6 +382,9 @@ export class GameScene extends Phaser.Scene {
     switch (this.activeTab) {
       case "keep":
         this.buildKeepTab();
+        break;
+      case "cells":
+        this.buildCellsTab();
         break;
       case "offers":
         this.buildOffersTab();
@@ -518,7 +584,7 @@ export class GameScene extends Phaser.Scene {
       }),
     );
     panel.add(
-      this.add.text(34, 34, `◆ ${p.rarity}  •  ${p.severity}  •  ${p.sentenceDays}d left`, {
+      this.add.text(34, 34, `◆ ${p.rarity}  •  ${p.severity}  •  ${p.sentenceDays}d left  •  ${cellName(p)}`, {
         fontFamily: FONT.family,
         fontSize: "14px",
         color: COLORS.neutralCss,
@@ -557,6 +623,106 @@ export class GameScene extends Phaser.Scene {
     applyAction(this.state, { type: "assignLabor", prisonerId: p.id, assignment: next });
     this.persist();
     this.renderContent();
+  }
+
+  /** The cell block: every cell drawn in place, its occupant named, tap to
+   * re-task them. Overflow inmates (beyond capacity) wait in the yard. */
+  private buildCellsTab(): void {
+    const s = this.state;
+    const living = s.prisoners.filter((p) => p.alive);
+    const byCell = new Map<number, Prisoner>();
+    for (const p of living) {
+      if (typeof p.cell === "number") byCell.set(p.cell, p);
+    }
+
+    this.content.add(
+      this.add.text(16, this.contentTop, "The cell block — tap an inmate to change their labour.", {
+        fontFamily: FONT.family,
+        fontSize: "16px",
+        color: COLORS.neutralCss,
+      }),
+    );
+
+    const cap = s.cellCapacity;
+    const cols = cap <= 9 ? 3 : 4;
+    const gap = 10;
+    const cellW = (VIEW.width - 32 - gap * (cols - 1)) / cols;
+    const rows = Math.ceil(cap / cols);
+    const gridTop = this.contentTop + 30;
+    const yard = living.filter((p) => typeof p.cell !== "number" || p.cell >= cap);
+    const yardH = yard.length > 0 ? 64 : 0;
+    const availH = this.contentBottom - gridTop - yardH - 8;
+    const cellH = Math.max(88, Math.min(150, Math.floor(availH / rows) - gap));
+
+    for (let i = 0; i < cap; i++) {
+      const x = 16 + (i % cols) * (cellW + gap);
+      const y = gridTop + Math.floor(i / cols) * (cellH + gap);
+      const p = byCell.get(i);
+      const panel = makePanel(this, x, y, cellW, cellH);
+      panel.add(
+        this.add.text(8, 6, `Cell ${i + 1}`, {
+          fontFamily: FONT.family,
+          fontSize: "12px",
+          color: COLORS.neutralCss,
+        }),
+      );
+      if (p) {
+        const sev = COLORS.severity[p.severity] ?? COLORS.steel;
+        panel.add(this.add.rectangle(8, 26, 8, cellH - 36, sev).setOrigin(0, 0));
+        panel.add(
+          this.add.text(22, 26, clip(p.name, Math.floor((cellW - 30) / 8.5)), {
+            fontFamily: FONT.family,
+            fontSize: "15px",
+            color: COLORS.rarity[p.rarity] ?? COLORS.parchmentCss,
+          }),
+        );
+        panel.add(
+          this.add.text(22, 48, `${p.severity} • ${p.sentenceDays}d`, {
+            fontFamily: FONT.family,
+            fontSize: "12px",
+            color: COLORS.neutralCss,
+          }),
+        );
+        panel.add(
+          this.add.text(22, cellH - 26, `${LABOR_ICON[p.assignment]} ${p.assignment}`, {
+            fontFamily: FONT.family,
+            fontSize: "14px",
+            color: COLORS.goldCss,
+          }),
+        );
+        const hit = this.add
+          .rectangle(0, 0, cellW, cellH, 0xffffff, 0.001)
+          .setOrigin(0, 0)
+          .setInteractive({ useHandCursor: true });
+        hit.on("pointerup", () => this.cycleLabor(p));
+        panel.add(hit);
+      } else {
+        panel.add(
+          this.add
+            .text(cellW / 2, cellH / 2 + 6, "— empty —", {
+              fontFamily: FONT.family,
+              fontSize: "13px",
+              color: COLORS.neutralCss,
+            })
+            .setOrigin(0.5, 0.5)
+            .setAlpha(0.5),
+        );
+      }
+      this.content.add(panel);
+    }
+
+    if (yard.length > 0) {
+      const yardY = gridTop + rows * (cellH + gap);
+      const panel = makePanel(this, 16, yardY, VIEW.width - 32, 56, "⚠ The Yard (over capacity)");
+      panel.add(
+        this.add.text(12, 32, clip(yard.map((p) => p.name).join(", "), 74), {
+          fontFamily: FONT.family,
+          fontSize: "13px",
+          color: COLORS.badCss,
+        }),
+      );
+      this.content.add(panel);
+    }
   }
 
   private buildOffersTab(): void {
@@ -646,54 +812,58 @@ export class GameScene extends Phaser.Scene {
 
   private buildMarketTab(): void {
     const s = this.state;
+    const w = VIEW.width - 32;
     let y = this.contentTop;
-    const row = (label: string, cost: number, onTap: () => void, affordable: boolean) => {
-      const panel = makePanel(this, 16, y, VIEW.width - 32, 70);
+
+    // Provisions — three quick-buys side by side.
+    {
+      const panel = makePanel(this, 16, y, w, 96, "Provisions");
+      const buys: Array<["food" | "firewood" | "buckets", string, number]> = [
+        ["food", "🍖 +10", 10],
+        ["firewood", "🪵 +10", 10],
+        ["buckets", "🪣 +2", 2],
+      ];
+      const bw = (w - 16 * 2 - 12 * 2) / 3;
+      buys.forEach(([resource, label, amount], i) => {
+        const cost = costs.buyResource(resource, amount, s);
+        panel.add(
+          makeButton(this, {
+            x: 16 + i * (bw + 12), y: 36, width: bw, height: 48,
+            label: `${label}  ${cost}🪙`, fontSize: 16,
+            enabled: s.resources.coin >= cost,
+            onTap: () => this.doAction({ type: "buyResource", resource, amount }, "market"),
+          }),
+        );
+      });
+      this.content.add(panel);
+      y += 106;
+    }
+
+    // Muster — hire and expand, side by side.
+    {
+      const panel = makePanel(this, 16, y, w, 70);
+      const bw = (w - 16 * 2 - 12) / 2;
+      const hireCost = costs.hireGuard(s);
+      const capCost = costs.upgradeCapacity(s);
       panel.add(
-        this.add.text(16, 22, label, {
-          fontFamily: FONT.family,
-          fontSize: "19px",
-          color: COLORS.parchmentCss,
+        makeButton(this, {
+          x: 16, y: 11, width: bw, height: 48,
+          label: `Hire Warder  ${hireCost}🪙`, fontSize: 16,
+          enabled: s.resources.coin >= hireCost,
+          onTap: () => this.doAction({ type: "hireGuard" }, "market"),
         }),
       );
       panel.add(
         makeButton(this, {
-          x: VIEW.width - 32 - 150,
-          y: 11,
-          width: 138,
-          height: 48,
-          label: `${cost} 🪙`,
-          fontSize: 18,
-          enabled: affordable,
-          onTap,
+          x: 16 + bw + 12, y: 11, width: bw, height: 48,
+          label: `Cells +2 (→${s.cellCapacity + 2})  ${capCost}🪙`, fontSize: 16,
+          enabled: s.resources.coin >= capCost,
+          onTap: () => this.doAction({ type: "upgradeCapacity" }, "market"),
         }),
       );
       this.content.add(panel);
       y += 80;
-    };
-
-    row("Buy 10 Food", costs.buyResource("food", 10, s), () =>
-      this.doAction({ type: "buyResource", resource: "food", amount: 10 }, "market"),
-      s.resources.coin >= costs.buyResource("food", 10, s),
-    );
-    row("Buy 10 Firewood", costs.buyResource("firewood", 10, s), () =>
-      this.doAction({ type: "buyResource", resource: "firewood", amount: 10 }, "market"),
-      s.resources.coin >= costs.buyResource("firewood", 10, s),
-    );
-    row("Buy 2 Buckets", costs.buyResource("buckets", 2, s), () =>
-      this.doAction({ type: "buyResource", resource: "buckets", amount: 2 }, "market"),
-      s.resources.coin >= costs.buyResource("buckets", 2, s),
-    );
-    row(`Hire Warder`, costs.hireGuard(s), () =>
-      this.doAction({ type: "hireGuard" }, "market"),
-      s.resources.coin >= costs.hireGuard(s),
-    );
-    row(
-      `Expand Cells (+2 → ${s.cellCapacity + 2})`,
-      costs.upgradeCapacity(s),
-      () => this.doAction({ type: "upgradeCapacity" }, "market"),
-      s.resources.coin >= costs.upgradeCapacity(s),
-    );
+    }
 
     // Keep buildings — one-time constructions, each a permanent dial.
     const BUILDING_ROWS: Array<[Parameters<typeof costs.build>[0], string, string]> = [
@@ -701,26 +871,28 @@ export class GameScene extends Phaser.Scene {
       ["chapel", "⛪ Chapel", "calms the cells daily"],
       ["gallows", "🪢 Gallows", "fear: quiet cells, fewer escapes — hardens your soul"],
       ["walls", "🧱 High Walls", "halves escape attempts"],
+      ["barracks", "🛏 Barracks", `bunks for ${BALANCE.buildings.barracks.quarters} more warders — crowding sours the corps`],
+      ["tavern", "🍺 Tavern", "ale and dice each evening lift the warders' spirits"],
     ];
     for (const [id, label, hint] of BUILDING_ROWS) {
       const built = s.buildings[id];
       const cost = costs.build(id, s);
-      const panel2 = makePanel(this, 16, y, VIEW.width - 32, 70);
+      const panel2 = makePanel(this, 16, y, w, 66);
       panel2.add(
-        this.add.text(16, 12, label + (built ? "  ✓ built" : ""), {
-          fontFamily: FONT.family, fontSize: "18px",
+        this.add.text(16, 10, label + (built ? "  ✓ built" : ""), {
+          fontFamily: FONT.family, fontSize: "17px",
           color: built ? COLORS.goodCss : COLORS.parchmentCss,
         }),
       );
       panel2.add(
-        this.add.text(16, 38, hint, {
+        this.add.text(16, 36, hint, {
           fontFamily: FONT.family, fontSize: "13px", color: COLORS.neutralCss,
         }),
       );
       if (!built) {
         panel2.add(
           makeButton(this, {
-            x: VIEW.width - 32 - 150, y: 11, width: 138, height: 48,
+            x: w - 150, y: 9, width: 138, height: 48,
             label: `${cost} 🪙`, fontSize: 18,
             enabled: s.resources.coin >= cost,
             onTap: () => this.doAction({ type: "build", building: id }, "market"),
@@ -728,17 +900,21 @@ export class GameScene extends Phaser.Scene {
         );
       }
       this.content.add(panel2);
-      y += 80;
+      y += 74;
     }
 
-    // Guard roster with dismissal (two-tap confirm — destructive action).
+    // Guard roster with morale and dismissal (two-tap confirm — destructive).
     const shown = s.guards.slice(0, 5);
-    const rosterH = 40 + shown.length * 34 + (s.guards.length > 5 ? 22 : 0);
-    const panel = makePanel(this, 16, y + 4, VIEW.width - 32, Math.max(70, rosterH), `Warders (${s.guards.length})`);
+    const rosterH = 40 + shown.length * 32 + (s.guards.length > 5 ? 22 : 0);
+    const bunks = guardQuarters(s);
+    const panel = makePanel(
+      this, 16, y + 4, w, Math.max(70, rosterH),
+      `Warders (${s.guards.length})  •  🛏 ${s.guards.length}/${bunks} bunks`,
+    );
     shown.forEach((g, i) => {
-      const rowY = 36 + i * 34;
+      const rowY = 36 + i * 32;
       panel.add(
-        this.add.text(16, rowY + 7, `${g.name} — skill ${g.skill}, brut ${g.brutality}, wage ${g.wage}`, {
+        this.add.text(16, rowY + 6, `${moraleFace(g.morale)} ${clip(g.name, 20)} — skill ${g.skill}, wage ${g.wage}, morale ${Math.round(g.morale)}`, {
           fontFamily: FONT.family,
           fontSize: "14px",
           color: COLORS.rarity[g.rarity] ?? COLORS.neutralCss,
@@ -747,7 +923,7 @@ export class GameScene extends Phaser.Scene {
       const confirming = this.confirmDismissId === g.id;
       panel.add(
         makeButton(this, {
-          x: VIEW.width - 32 - 118, y: rowY, width: 106, height: 30,
+          x: w - 118, y: rowY, width: 106, height: 28,
           label: confirming ? "Dismiss?" : "✕",
           fontSize: 14,
           fill: confirming ? COLORS.blood : COLORS.panelLight,
@@ -765,7 +941,7 @@ export class GameScene extends Phaser.Scene {
     });
     if (s.guards.length > 5) {
       panel.add(
-        this.add.text(16, 36 + shown.length * 34, `…and ${s.guards.length - 5} more on the payroll`, {
+        this.add.text(16, 36 + shown.length * 32, `…and ${s.guards.length - 5} more on the payroll`, {
           fontFamily: FONT.family, fontSize: "13px", color: COLORS.neutralCss,
         }),
       );
@@ -780,12 +956,13 @@ export class GameScene extends Phaser.Scene {
     recent.forEach((entry, i) => {
       const color =
         entry.tone === "good" ? COLORS.goodCss : entry.tone === "bad" ? COLORS.badCss : COLORS.neutralCss;
+      // One entry, one line: clip instead of wrapping, so rows can never
+      // overlap the fixed 20px line pitch below the prisoner cards.
       panel.add(
-        this.add.text(12, 32 + i * 20, `d${entry.day}: ${entry.text}`, {
+        this.add.text(12, 32 + i * 20, clip(`d${entry.day}: ${entry.text}`, 78), {
           fontFamily: FONT.family,
           fontSize: "13px",
           color,
-          wordWrap: { width: VIEW.width - 56 },
         }),
       );
     });
@@ -793,19 +970,36 @@ export class GameScene extends Phaser.Scene {
   }
 
   private renderEndDayBar(): void {
+    const evening = this.state.hour >= BALANCE.time.dayEndHour;
     this.content.add(
       makeButton(this, {
         x: 16,
         y: VIEW.height - 84,
         width: VIEW.width - 32,
         height: 68,
-        label: "⏭  End Day",
+        label: evening ? "🌙  Retire for the Night" : "⏩  Skip to Evening",
         fontSize: 26,
-        fill: COLORS.moss,
-        textColor: COLORS.inkCss,
-        onTap: () => this.endDay(),
+        fill: evening ? COLORS.moss : COLORS.panelLight,
+        textColor: evening ? COLORS.inkCss : COLORS.parchmentCss,
+        onTap: () => (evening ? this.endDay() : this.skipToEvening()),
       }),
     );
+  }
+
+  /** Fast-forward the remaining daylight (income and labour accrue in full) —
+   * the impatient warden's lever. RNG-free: no different from waiting. */
+  private skipToEvening(): void {
+    const s = this.state;
+    if (s.gameOver || s.pendingDecision || this.dayInFlight) return;
+    const beforeCoin = s.resources.coin;
+    while (s.hour < BALANCE.time.dayEndHour) advanceHour(s);
+    this.persist();
+    this.renderAll();
+    const delta = Math.round(s.resources.coin - beforeCoin);
+    if (delta !== 0) {
+      this.juice.floatNumber(this.coinChip.x, this.coinChip.y, `+${delta}`, COLORS.goldCss);
+    }
+    this.displayed.coin = s.resources.coin;
   }
 
   private endDay(): void {
@@ -1229,4 +1423,26 @@ function tierTitle(tier: GameState["tier"]): string {
 
 function round1(n: number): number {
   return Math.round(n * 10) / 10;
+}
+
+/** 6 → "6am", 12 → "noon", 21 → "9pm". */
+function hourLabel(h: number): string {
+  if (h === 12) return "noon";
+  if (h === 0 || h === 24) return "midnight";
+  return h < 12 ? `${h}am` : `${h - 12}pm`;
+}
+
+/** Clip a string to `max` chars with an ellipsis (single-line layouts). */
+function clip(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, Math.max(0, max - 1))}…` : text;
+}
+
+/** A warder's mood at a glance. */
+function moraleFace(morale: number): string {
+  return morale >= 70 ? "😊" : morale >= 40 ? "😐" : "😠";
+}
+
+/** Which cell an inmate sleeps in, 1-based for display. */
+function cellName(p: Prisoner): string {
+  return typeof p.cell === "number" ? `cell ${p.cell + 1}` : "the yard";
 }

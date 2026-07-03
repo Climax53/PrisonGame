@@ -60,6 +60,8 @@ export interface Prisoner {
   assignment: LaborAssignment;
   /** Coin the government pays per day to hold this inmate (locked at intake). */
   dailyPayout: number;
+  /** Which numbered cell houses this inmate (0-based; undefined = unassigned). */
+  cell?: number;
   /** Set when this inmate is a named legend with a story arc (legends.ts). */
   legendId?: string;
   /** Next arc step awaiting its trigger (index into the legend's steps). */
@@ -81,6 +83,11 @@ export interface Guard {
   wage: number;
   /** 0–100. Tired guards are less effective. Rises on event days, recovers otherwise. */
   fatigue: number;
+  /**
+   * 0–100. The officer's contentment: driven by pay, food, quarters, and
+   * entertainment. Low morale saps effectiveness; miserable warders walk out.
+   */
+  morale: number;
 }
 
 /** Consumable / stored resources. */
@@ -180,7 +187,13 @@ export type WardenClass =
 export type Pacing = "slow" | "steady" | "chaos";
 
 /** Purchasable keep buildings, each a permanent strategic dial. */
-export type BuildingId = "infirmary" | "chapel" | "gallows" | "walls";
+export type BuildingId =
+  | "infirmary"
+  | "chapel"
+  | "gallows"
+  | "walls"
+  | "barracks" // quarters for the warder corps
+  | "tavern"; // off-duty entertainment for the warders
 
 /** Cosmetic identity shown on the HUD, endings, and the share card. */
 export interface Heraldry {
@@ -226,6 +239,12 @@ export interface RunStats {
 /** The complete serializable game state. Saving = JSON.stringify(state). */
 export interface GameState {
   day: number;
+  /**
+   * The clock, in whole hours. The active day runs dayStartHour..dayEndHour
+   * (see BALANCE.time); income and labour accrue hourly while it advances.
+   * At dayEndHour the keep locks until the warden retires for the night.
+   */
+  hour: number;
   tier: WardenTier;
   /** 0–100. The master progression metric. */
   reputation: number;

@@ -105,6 +105,8 @@ export const BALANCE = {
     /** The gallows rules by fear: quiets cells, deters escapes, hardens the soul. */
     gallows: { cost: 150, unrestPerDay: 2, escapeMult: 0.85, moralityDriftPerDay: 0.15 },
     walls: { cost: 250, escapeMult: 0.5 },
+    barracks: { cost: 160, quarters: 4 },
+    tavern: { cost: 140, moralePerDay: 4 },
   },
 
   /** The Crown's Whim — event-pacing multipliers (changeable mid-run, no penalty). */
@@ -157,12 +159,38 @@ export const BALANCE = {
   },
 
   sentence: {
-    /** Sentence length range (days) by severity. */
-    petty: [4, 8],
-    violent: [8, 16],
-    political: [14, 26],
-    noble: [20, 40],
+    /** Sentence length range (days) by severity. Long holds are the norm — the
+     * cells fill up, so accepting a common today may cost you an epic tomorrow. */
+    petty: [10, 16],
+    violent: [14, 24],
+    political: [18, 28],
+    noble: [22, 32],
   } as Record<Severity, [number, number]>,
+
+  /** The clock. The active day runs start..end; each hour accrues income and
+   * labour. At `end` the keep locks until the warden retires for the night. */
+  time: {
+    dayStartHour: 6,
+    dayEndHour: 21,
+    /** Convenience: active hours per day. */
+    hoursPerDay: 15,
+  },
+
+  /** What the warder corps needs beyond wages (they are staff, not furniture). */
+  guardNeeds: {
+    foodPerGuard: 1,
+    /** Bunks available without a barracks. */
+    baseQuarters: 3,
+    moraleStart: 70,
+    /** Daily morale deltas. */
+    paidGain: 2,
+    unpaidLoss: 25,
+    unfedLoss: 15,
+    crowdedLoss: 6,
+    /** Morale below this risks resignation at night. */
+    quitThreshold: 25,
+    quitChance: 0.35,
+  },
 
   // ── Rarity ─────────────────────────────────────────────────────────────────
   rarity: {

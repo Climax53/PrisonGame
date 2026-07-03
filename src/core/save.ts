@@ -9,7 +9,7 @@
 // defaults. A save should load, or return null — never load corrupted.
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { emptyStats } from "./state";
+import { assignCells, emptyStats } from "./state";
 import { RARITY_ORDER, type GameState, type Rarity } from "./types";
 
 /**
@@ -20,8 +20,9 @@ import { RARITY_ORDER, type GameState, type Rarity } from "./types";
  * v2 — adds GameState.morality, Prisoner.rarity, Guard.rarity
  * v3 — adds run-arc fields: stats, crownDays, winterDaysLeft, gameWon, endingId
  * v4 — adds warden class, identity (names/heraldry), pacing, buildings, legends
+ * v5 — adds the hour clock, guard morale, prisoner cells, barracks/tavern
  */
-export const SAVE_VERSION = 4;
+export const SAVE_VERSION = 5;
 
 export interface SaveBlob {
   version: number;
@@ -50,8 +51,19 @@ const MIGRATIONS: Record<number, (s: GameState) => void> = {
     s.keepName ||= "the Keep";
     s.heraldry ??= { color: 0, sigil: "🗝" };
     s.pacing ??= "steady";
-    s.buildings ??= { infirmary: false, chapel: false, gallows: false, walls: false };
+    s.buildings ??= {
+      infirmary: false, chapel: false, gallows: false, walls: false,
+      barracks: false, tavern: false,
+    };
     s.legendsSeen ??= [];
+  },
+  4: (s) => {
+    // v4 → v5: the clock, guard needs, cell assignment, new buildings.
+    s.hour ??= 6;
+    for (const g of s.guards) g.morale ??= 70;
+    s.buildings.barracks ??= false;
+    s.buildings.tavern ??= false;
+    // Cells are assigned by the repair pass (shared with corrupted saves).
   },
 };
 
@@ -95,9 +107,19 @@ function repair(s: GameState): GameState | null {
   }
   if (!["slow", "steady", "chaos"].includes(s.pacing as string)) s.pacing = "steady";
   if (typeof s.buildings !== "object" || s.buildings === null) {
-    s.buildings = { infirmary: false, chapel: false, gallows: false, walls: false };
+    s.buildings = {
+      infirmary: false, chapel: false, gallows: false, walls: false,
+      barracks: false, tavern: false,
+    };
   }
+  if (typeof s.buildings.barracks !== "boolean") s.buildings.barracks = false;
+  if (typeof s.buildings.tavern !== "boolean") s.buildings.tavern = false;
   if (!Array.isArray(s.legendsSeen)) s.legendsSeen = [];
+  if (typeof s.hour !== "number" || Number.isNaN(s.hour)) s.hour = 6;
+  for (const g of s.guards) {
+    if (typeof g.morale !== "number" || Number.isNaN(g.morale)) g.morale = 70;
+  }
+  assignCells(s);
   return s;
 }
 
