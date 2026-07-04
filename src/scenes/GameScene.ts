@@ -39,6 +39,13 @@ import { Juice } from "../ui/fx";
 import { getSettings, updateSettings } from "../ui/settings";
 import { ACHIEVEMENTS, BANNER_COLORS, SIGILS, traitDef, wardenDef } from "../core";
 import {
+  askQuestion,
+  cellConflictChance,
+  INTERVIEW_QUESTIONS,
+  traitKnown,
+  type InterviewTopic,
+} from "../core";
+import {
   buildDecreeStrip,
   ftueActive,
   markDecree,
@@ -389,7 +396,7 @@ export class GameScene extends Phaser.Scene {
       }),
     );
     const tierLabel = this.add
-      .text(VIEW.width - 58, 10, `${tierTitle(s.tier)} · Day ${s.day}`, {
+      .text(VIEW.width - 160, 10, `${tierTitle(s.tier)} · Day ${s.day}`, {
         fontFamily: FONT.display,
         fontSize: "24px",
         color: COLORS.parchmentCss,
@@ -397,18 +404,16 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(1, 0);
     this.hud.add([title, tierLabel]);
 
-    // Crowns purse — tap to open the Royal Mint.
+    // Crowns purse — a real button beside the gear; opens the Royal Mint.
     const crowns = getProfile().crowns ?? 0;
-    const purse = this.add
-      .text(360, 40, `👑 ${crowns}`, {
-        fontFamily: FONT.medieval,
-        fontSize: "16px",
-        color: COLORS.goldCss,
-      })
-      .setOrigin(1, 0)
-      .setInteractive({ useHandCursor: true });
-    purse.on("pointerup", () => this.openStore());
-    this.hud.add(purse);
+    this.hud.add(
+      makeButton(this, {
+        x: VIEW.width - 148, y: 8, width: 92, height: 40,
+        label: `👑 ${crowns}`, fontSize: 18,
+        fill: COLORS.panelLight,
+        onTap: () => this.openStore(),
+      }),
+    );
 
     // Active-condition badges: the clock first, then winter/victory countdowns.
     const evening = s.hour >= BALANCE.time.dayEndHour;
@@ -420,7 +425,7 @@ export class GameScene extends Phaser.Scene {
     if (badges.length > 0) {
       this.hud.add(
         this.add
-          .text(VIEW.width - 58, 40, badges.join("   "), {
+          .text(VIEW.width - 160, 40, badges.join("   "), {
             fontFamily: FONT.family,
             fontSize: "14px",
             color: COLORS.goldCss,
@@ -466,9 +471,9 @@ export class GameScene extends Phaser.Scene {
         this.hud.add(icon);
         this.hud.add(
           this.add
-            .text(cx - 26, 58, val, {
+            .text(cx - 26, 56, val, {
               fontFamily: FONT.family,
-              fontSize: "22px",
+              fontSize: "24px",
               color,
             })
             .setOrigin(0, 0),
@@ -490,7 +495,7 @@ export class GameScene extends Phaser.Scene {
           this.add
             .text(cx, 84, `${d > 0 ? "+" : ""}${d}/d`, {
               fontFamily: FONT.family,
-              fontSize: "13px",
+              fontSize: "14px",
               color: d > 0 ? COLORS.goodCss : d < 0 ? COLORS.badCss : COLORS.neutralCss,
             })
             .setOrigin(0.5, 0),
@@ -632,6 +637,15 @@ export class GameScene extends Phaser.Scene {
   private ambientMutter(): void {
     const s = this.state;
     if (!s || s.gameOver || s.pendingDecision || getSettings().reducedMotion) return;
+    // Only where prisoners are on screen, and never over an open sheet.
+    if (this.activeTab !== "keep" && this.activeTab !== "cells") return;
+    const overlayDepths = new Set([820, 845, 850, 860, 870, 880]);
+    const overlayOpen = this.children.list.some(
+      (c) =>
+        overlayDepths.has((c as Phaser.GameObjects.Container).depth) &&
+        (c as Phaser.GameObjects.Container).length > 0,
+    );
+    if (overlayOpen) return;
     const living = s.prisoners.filter((p) => p.alive);
     if (living.length === 0) return;
     const p = living[Math.floor(Math.random() * living.length)];
@@ -695,8 +709,8 @@ export class GameScene extends Phaser.Scene {
 
     this.content.add(
       this.add.text(16, stripBottom, "Tap a prisoner for their dossier:", {
-        fontFamily: FONT.family,
-        fontSize: "16px",
+        fontFamily: FONT.medieval,
+        fontSize: "19px",
         color: COLORS.neutralCss,
       }),
     );
@@ -884,7 +898,7 @@ export class GameScene extends Phaser.Scene {
       const dIcon = artImage(this, iconKey, cxi + 10, 92, 20, 20);
       if (dIcon) panel.add(dIcon);
       panel.add(
-        this.add.text(dIcon ? cxi + 24 : cxi, 86, label, { fontFamily: FONT.family, fontSize: "13px", color: COLORS.parchmentCss }),
+        this.add.text(dIcon ? cxi + 24 : cxi, 84, label, { fontFamily: FONT.family, fontSize: "15px", color: COLORS.parchmentCss }),
       );
       panel.add(this.add.rectangle(cxi, 104, trackW, 12, COLORS.shadow).setOrigin(0, 0));
       panel.add(
@@ -931,9 +945,9 @@ export class GameScene extends Phaser.Scene {
     }
 
     panel.add(
-      this.add.text(textX, 8, `${p.name}`, {
-        fontFamily: FONT.family,
-        fontSize: "19px",
+      this.add.text(textX, 6, `${p.name}`, {
+        fontFamily: FONT.medieval,
+        fontSize: "21px",
         // Name tinted by rarity — the notoriety of the inmate at a glance.
         color: COLORS.rarity[p.rarity] ?? COLORS.parchmentCss,
       }),
@@ -941,7 +955,7 @@ export class GameScene extends Phaser.Scene {
     panel.add(
       this.add.text(textX, 32, `◆ ${p.rarity}  •  ${p.severity}  •  ${p.sentenceDays}d left  •  ${cellName(p)}`, {
         fontFamily: FONT.family,
-        fontSize: "13px",
+        fontSize: "14px",
         color: COLORS.neutralCss,
       }),
     );
@@ -953,14 +967,14 @@ export class GameScene extends Phaser.Scene {
     panel.add(makeBar(this, textX + 200, 56, 100, 12, p.unrest / 100, COLORS.bad));
 
     // Labour badge (the whole card is tappable to cycle it).
-    const laborIcon = artImage(this, LABOR_ICON_KEY[p.assignment], w - 30, h / 2 - 12, 30, 30);
+    const laborIcon = artImage(this, LABOR_ICON_KEY[p.assignment], w - 52, h / 2 - 14, 30, 30);
     if (laborIcon) {
       panel.add(laborIcon);
       panel.add(
         this.add
-          .text(w - 30, h / 2 + 16, p.assignment, {
+          .text(w - 52, h / 2 + 16, p.assignment === "none" ? "resting" : p.assignment, {
             fontFamily: FONT.family,
-            fontSize: "13px",
+            fontSize: "12px",
             color: COLORS.goldCss,
           })
           .setOrigin(0.5, 0.5),
@@ -984,6 +998,138 @@ export class GameScene extends Phaser.Scene {
     hit.on("pointerup", () => this.openPrisonerSheet(p));
     panel.add(hit);
     return panel;
+  }
+
+  /**
+   * INTAKE — the new arrival stands before you. Ask up to two questions from
+   * the preset list (each reveals temperament, working hands, or their past),
+   * then choose their cell — the grid warns when a neighbour spells trouble
+   * (cellConflictChance drives real night brawls in the core).
+   */
+  openIntakeSheet(p: Prisoner, fresh: boolean): void {
+    const layer = this.add.container(0, 0).setDepth(830);
+    const close = () => {
+      layer.destroy();
+      this.persist();
+      this.renderAll();
+    };
+    let answers: string[] = [];
+    const render = () => {
+      layer.removeAll(true);
+      layer.add(
+        this.add.rectangle(0, 0, VIEW.width, VIEW.height, COLORS.shadow, 0.9).setOrigin(0, 0).setInteractive(),
+      );
+      const w = VIEW.width - 64;
+      const h = Math.min(VIEW.height - 100, 760);
+      const py = (VIEW.height - h) / 2;
+      const panel = makePanel(this, 32, py, w, h, fresh ? "⛓  The New Arrival" : "🗣  The Interview Room");
+      const portrait = artImage(this, prisonerPortraitKey(p), 90, 110, 110, 110);
+      if (portrait) {
+        panel.add(portrait);
+        const frame = artImage(this, rarityFrameKey(p.rarity), 90, 110, 132, 132);
+        if (frame) panel.add(frame);
+      }
+      panel.add(
+        this.add.text(170, 56, p.name, {
+          fontFamily: FONT.display, fontSize: "28px",
+          color: COLORS.rarity[p.rarity] ?? COLORS.parchmentCss,
+        }),
+      );
+      panel.add(
+        this.add.text(170, 92, `${p.rarity} ${p.severity} · ${p.sentenceDays}d · pays ${p.dailyPayout}/day`, {
+          fontFamily: FONT.family, fontSize: "14px", color: COLORS.neutralCss,
+        }),
+      );
+      const asked = p.revealed ?? [];
+      panel.add(
+        this.add.text(20, 180, `Question them (${Math.max(0, 2 - asked.length)} left):`, {
+          fontFamily: FONT.medieval, fontSize: "18px", color: COLORS.goldCss,
+        }),
+      );
+      const topics = Object.keys(INTERVIEW_QUESTIONS) as InterviewTopic[];
+      topics.forEach((t, i) => {
+        const used = asked.includes(t);
+        const bw = (w - 40 - 16) / 3;
+        panel.add(
+          makeButton(this, {
+            x: 20 + i * (bw + 8), y: 208, width: bw, height: 44,
+            label: INTERVIEW_QUESTIONS[t].label, fontSize: 14,
+            fill: used ? COLORS.gold : COLORS.panelLight,
+            textColor: used ? COLORS.inkCss : COLORS.parchmentCss,
+            enabled: used || asked.length < 2,
+            onTap: () => {
+              const line = askQuestion(p, t);
+              if (!answers.includes(line)) answers.push(line);
+              this.persist();
+              render();
+            },
+          }),
+        );
+      });
+      answers.slice(-2).forEach((line, i) => {
+        panel.add(
+          this.add.text(20, 264 + i * 44, clip(`“${line}”`, 160), {
+            fontFamily: FONT.family, fontSize: "14px", color: COLORS.parchmentCss,
+            wordWrap: { width: w - 40 },
+          }),
+        );
+      });
+
+      // ── Choose the cell ──
+      panel.add(
+        this.add.text(20, 360, "Assign their cell (⚠ = a bad neighbour):", {
+          fontFamily: FONT.medieval, fontSize: "18px", color: COLORS.goldCss,
+        }),
+      );
+      const s = this.state;
+      const byCell = new Map<number, Prisoner>();
+      for (const q of s.prisoners) {
+        if (q.alive && q.id !== p.id && typeof q.cell === "number") byCell.set(q.cell, q);
+      }
+      const neighboursOf = (c: number): Prisoner[] => {
+        const ids = [c % 2 === 0 ? c + 1 : c - 1, c - 2, c + 2];
+        return ids.map((n) => byCell.get(n)).filter((q): q is Prisoner => !!q);
+      };
+      const cols = 5;
+      const bw = (w - 40 - (cols - 1) * 8) / cols;
+      for (let c = 0; c < s.cellCapacity; c++) {
+        const row = Math.floor(c / cols);
+        const bx = 20 + (c % cols) * (bw + 8);
+        const by = 392 + row * 52;
+        const occupant = byCell.get(c);
+        const risky = !occupant && neighboursOf(c).some((q) => cellConflictChance(p, q) >= 0.15);
+        panel.add(
+          makeButton(this, {
+            x: bx, y: by, width: bw, height: 44,
+            label: occupant ? "●" : `${c + 1}${risky ? " ⚠" : ""}${p.cell === c ? " ✓" : ""}`,
+            fontSize: 15,
+            fill: p.cell === c ? COLORS.gold : risky ? COLORS.blood : COLORS.panelLight,
+            textColor: p.cell === c ? COLORS.inkCss : COLORS.parchmentCss,
+            enabled: !occupant,
+            onTap: () => {
+              const res = applyAction(s, { type: "movePrisoner", prisonerId: p.id, cell: c });
+              if (!res.ok && res.error) this.toast(res.error, COLORS.badCss);
+              else if (risky) {
+                this.toast("They eye their new neighbour with open menace…", COLORS.badCss);
+              }
+              this.persist();
+              render();
+            },
+          }),
+        );
+      }
+      const gridBottom = 392 + Math.ceil(s.cellCapacity / cols) * 52;
+      panel.add(
+        makeButton(this, {
+          x: 20, y: Math.min(h - 66, gridBottom + 10), width: w - 40, height: 52,
+          label: fresh ? "⛓  Lock Them In" : "Done", fontSize: 19,
+          fill: COLORS.gold, textColor: COLORS.inkCss,
+          onTap: close,
+        }),
+      );
+      layer.add(panel);
+    };
+    render();
   }
 
   /**
@@ -1029,10 +1175,11 @@ export class GameScene extends Phaser.Scene {
         })
         .setOrigin(0.5, 0),
     );
-    const trait = traitDef(p.trait);
+    const known = traitKnown(p);
+    const trait = known ? traitDef(p.trait) : undefined;
     panel.add(
       this.add
-        .text(w / 2, 278, `${p.rarity} ${p.severity}${trait ? `  ·  ${trait.name}` : ""}`, {
+        .text(w / 2, 278, `${p.rarity} ${p.severity}  ·  ${known ? (trait ? trait.name : "even-tempered") : "temperament unknown"}`, {
           fontFamily: FONT.medieval,
           fontSize: "17px",
           color: COLORS.neutralCss,
@@ -1105,8 +1252,18 @@ export class GameScene extends Phaser.Scene {
 
     panel.add(
       makeButton(this, {
-        x: 28, y: h - 70, width: w - 56, height: 54,
-        label: "Close the Dossier", fontSize: 19,
+        x: 28, y: h - 70, width: (w - 68) / 2, height: 54,
+        label: "🗣 Interview / Move", fontSize: 16,
+        onTap: () => {
+          close();
+          this.openIntakeSheet(p, false);
+        },
+      }),
+    );
+    panel.add(
+      makeButton(this, {
+        x: 28 + (w - 68) / 2 + 12, y: h - 70, width: (w - 68) / 2, height: 54,
+        label: "Close", fontSize: 19,
         onTap: close,
       }),
     );
@@ -1184,27 +1341,37 @@ export class GameScene extends Phaser.Scene {
       torch.play("vfx_torch_flame");
       this.content.add(torch);
     }
-    // Patrolling warders — the corps, visibly on duty.
+    // Patrolling guards — the artist's own figures walking the corridor
+    // (down-facing frames on the way down, tabard-back frames on the way up).
     const patrols = Math.min(3, s.guards.length);
     for (let g = 0; g < patrols; g++) {
-      const guard = this.add
-        .text(corridorX + 18 + g * 26, gridTop + 70, "⚔", {
-          fontFamily: FONT.family,
-          fontSize: "22px",
-          color: COLORS.steelCss,
-        })
-        .setOrigin(0.5, 0.5);
-      this.content.add(guard);
-      if (!getSettings().reducedMotion && blockH > 160) {
-        this.tweens.add({
-          targets: guard,
-          y: gridTop + blockH - 40,
-          duration: 6000 + g * 1700,
-          delay: g * 900,
-          yoyo: true,
-          repeat: -1,
-          ease: "Sine.easeInOut",
-        });
+      const gx = corridorX + CORRIDOR_W / 2 + (g - 1) * 24;
+      if (this.anims.exists("guard_walk_down")) {
+        const spr = this.add.sprite(gx, gridTop + 60 + g * 30, "sprite_guard").setScale(0.44);
+        spr.play("guard_walk_down");
+        this.content.add(spr);
+        if (!getSettings().reducedMotion && blockH > 200) {
+          this.tweens.add({
+            targets: spr,
+            y: gridTop + blockH - 50,
+            duration: 9000 + g * 2300,
+            delay: g * 1300,
+            yoyo: true,
+            repeat: -1,
+            ease: "Linear",
+            onYoyo: () => spr.play("guard_walk_up"),
+            onRepeat: () => spr.play("guard_walk_down"),
+          });
+        }
+      } else {
+        const mark = this.add
+          .text(gx, gridTop + 70, "⚔", {
+            fontFamily: FONT.family,
+            fontSize: "22px",
+            color: COLORS.steelCss,
+          })
+          .setOrigin(0.5, 0.5);
+        this.content.add(mark);
       }
     }
     if (s.guards.length === 0) {
@@ -1480,7 +1647,7 @@ export class GameScene extends Phaser.Scene {
       panel.add(
         makeButton(this, {
           x: 16, y: 11, width: bw, height: 48,
-          label: `Hire Warder  ${hireCost}🪙`, fontSize: 16,
+          label: `Hire Guard  ${hireCost}🪙`, fontSize: 16,
           enabled: s.resources.coin >= hireCost,
           onTap: () => this.doAction({ type: "hireGuard" }, "market"),
         }),
@@ -1503,8 +1670,8 @@ export class GameScene extends Phaser.Scene {
       ["chapel", "⛪ Chapel", "icon_chapel", "calms the cells daily"],
       ["gallows", "🪢 Gallows", "icon_noose", "fear: quiet cells, fewer escapes — hardens your soul"],
       ["walls", "🧱 High Walls", "icon_wall", "halves escape attempts"],
-      ["barracks", "🛏 Barracks", "", `bunks for ${BALANCE.buildings.barracks.quarters} more warders — crowding sours the corps`],
-      ["tavern", "🍺 Tavern", "icon_dice", "ale and dice each evening lift the warders' spirits"],
+      ["barracks", "🛏 Barracks", "", `bunks for ${BALANCE.buildings.barracks.quarters} more guards — crowding sours the corps`],
+      ["tavern", "🍺 Tavern", "icon_dice", "ale and dice each evening lift the guards' spirits"],
     ];
     for (const [id, label, iconKey, hint] of BUILDING_ROWS) {
       const built = s.buildings[id];
@@ -1544,7 +1711,7 @@ export class GameScene extends Phaser.Scene {
     const bunks = guardQuarters(s);
     const panel = makePanel(
       this, 16, y + 4, w, Math.max(70, rosterH),
-      `Warders (${s.guards.length})  •  🛏 ${s.guards.length}/${bunks} bunks`,
+      `Guards (${s.guards.length})  •  🛏 ${s.guards.length}/${bunks} bunks`,
     );
     shown.forEach((g, i) => {
       const rowY = 36 + i * 32;
@@ -1587,16 +1754,16 @@ export class GameScene extends Phaser.Scene {
   private buildLogPanel(y: number): void {
     const h = Math.max(80, this.contentBottom - y - 4);
     const panel = makePanel(this, 16, y, VIEW.width - 32, h, "Chronicle");
-    const recent = this.state.log.slice(-Math.floor((h - 32) / 20));
+    const recent = this.state.log.slice(-Math.floor((h - 36) / 24));
     recent.forEach((entry, i) => {
       const color =
         entry.tone === "good" ? COLORS.goodCss : entry.tone === "bad" ? COLORS.badCss : COLORS.neutralCss;
       // One entry, one line: clip instead of wrapping, so rows can never
       // overlap the fixed 20px line pitch below the prisoner cards.
       panel.add(
-        this.add.text(12, 32 + i * 20, clip(`d${entry.day}: ${entry.text}`, 78), {
+        this.add.text(12, 36 + i * 24, clip(`d${entry.day}: ${entry.text}`, 66), {
           fontFamily: FONT.family,
-          fontSize: "13px",
+          fontSize: "15px",
           color,
         }),
       );
@@ -1725,7 +1892,12 @@ export class GameScene extends Phaser.Scene {
       this.playBurst("vfx_smoke_puff", VIEW.width / 2, VIEW.height / 2, 1.3);
     }
     // First Decrees hooks — the tutorial rewards REAL actions.
-    if (res.ok && action.type === "acceptOffer") this.decree("acceptPrisoner");
+    if (res.ok && action.type === "acceptOffer") {
+      this.decree("acceptPrisoner");
+      // Intake: question the new arrival, then choose their cell.
+      const newest = this.state.prisoners[this.state.prisoners.length - 1];
+      if (newest) this.openIntakeSheet(newest, true);
+    }
     if (res.ok && action.type === "buyResource") this.decree("buyProvisions");
     const coinDelta = Math.round(this.state.resources.coin - beforeCoin);
     if (coinDelta !== 0) {

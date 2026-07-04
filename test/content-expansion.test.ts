@@ -367,8 +367,8 @@ describe("intake scales with tier", () => {
 // ── Save v6 ──────────────────────────────────────────────────────────────────
 
 describe("save v6 migration", () => {
-  it("SAVE_VERSION is 6", () => {
-    expect(SAVE_VERSION).toBe(6);
+  it("SAVE_VERSION is 7", () => {
+    expect(SAVE_VERSION).toBe(7);
   });
 
   it("a v5 save (no traits anywhere) migrates, loads, and plays a day", () => {

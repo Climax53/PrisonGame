@@ -62,6 +62,25 @@ export function applyAction(state: GameState, action: PlayerAction): ActionResul
       return ok;
     }
 
+    case "movePrisoner": {
+      const prisoner = state.prisoners.find((p) => p.id === action.prisonerId);
+      if (!prisoner || !prisoner.alive) return fail("No such prisoner.");
+      if (
+        !Number.isInteger(action.cell) ||
+        action.cell < 0 ||
+        action.cell >= state.cellCapacity
+      ) {
+        return fail("No such cell.");
+      }
+      const occupant = state.prisoners.find(
+        (p) => p.alive && p.id !== prisoner.id && p.cell === action.cell,
+      );
+      if (occupant) return fail("That cell is already occupied.");
+      prisoner.cell = action.cell;
+      pushLog(state, `${prisoner.name} is moved to cell ${action.cell + 1}.`, "neutral");
+      return ok;
+    }
+
     case "buyResource": {
       if (action.resource === "coin") return fail("You cannot buy coin.");
       if (action.amount <= 0) return fail("Amount must be positive.");
@@ -80,7 +99,7 @@ export function applyAction(state: GameState, action: PlayerAction): ActionResul
     case "hireGuard": {
       const hireCost = costs.hireGuard(state);
       if (state.resources.coin < hireCost) {
-        return fail("Not enough coin to hire a warder.");
+        return fail("Not enough coin to hire a guard.");
       }
       state.resources.coin -= hireCost;
       const rng = new Rng(state.rngState);

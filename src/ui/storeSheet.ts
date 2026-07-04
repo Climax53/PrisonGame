@@ -63,11 +63,24 @@ export function openStoreSheet(scene: Phaser.Scene, hooks: StoreSheetHooks): voi
     );
     let y = 46;
     panel.add(
-      scene.add.text(14, y, "Crowns are earned by deeds and the daily challenge.", {
-        fontFamily: FONT.family, fontSize: "13px", color: COLORS.neutralCss,
+      scene.add.text(14, y, "EARNING CROWNS — no purchase needed:", {
+        fontFamily: FONT.medieval, fontSize: "16px", color: COLORS.goldCss,
       }),
     );
     y += 24;
+    for (const line of [
+      "🏆 Deeds (achievements) pay 10–25 👑 each — 195 👑 in total",
+      "📅 The daily challenge pays 15 👑 every day you finish it",
+      "🛒 Crown packs below arrive with the App Store release",
+    ]) {
+      panel.add(
+        scene.add.text(20, y, line, {
+          fontFamily: FONT.family, fontSize: "14px", color: COLORS.parchmentCss,
+        }),
+      );
+      y += 22;
+    }
+    y += 6;
 
     // ── Crown packs (storefront stub — honest about not charging yet) ──
     const packW = (w - 28 - 16) / 3;

@@ -48,6 +48,9 @@ export type TraitId =
   | "penitent"
   | "ironBack";
 
+/** Topics the warden may raise at an intake interview (see interview.ts). */
+export type InterviewTopic = "temper" | "skills" | "past";
+
 /** Where a conscripted prisoner is assigned to labor. `none` = idle in cell. */
 export type LaborAssignment =
   | "none"
@@ -77,6 +80,12 @@ export interface Prisoner {
   dailyPayout: number;
   /** Which numbered cell houses this inmate (0-based; undefined = unassigned). */
   cell?: number;
+  /**
+   * Interview topics already answered (see interview.ts). New inmates start
+   * at [] with their temperament hidden; `undefined` means the inmate predates
+   * the interview feature and counts as fully known (save-safe).
+   */
+  revealed?: InterviewTopic[];
   /** Set when this inmate is a named legend with a story arc (legends.ts). */
   legendId?: string;
   /** Next arc step awaiting its trigger (index into the legend's steps). */
@@ -336,6 +345,7 @@ export type PlayerAction =
   | { type: "acceptOffer"; offerIndex: number }
   | { type: "declineOffer"; offerIndex: number }
   | { type: "assignLabor"; prisonerId: string; assignment: LaborAssignment }
+  | { type: "movePrisoner"; prisonerId: string; cell: number }
   | { type: "buyResource"; resource: keyof Resources; amount: number }
   | { type: "hireGuard" }
   | { type: "fireGuard"; guardId: string }

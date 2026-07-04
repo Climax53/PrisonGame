@@ -106,7 +106,7 @@ export function buildDecreeStrip(
   strip.add(
     scene.add.text(256, 10, `${DECREE_TEXT[next]}  (+${DECREE_REWARD}🪙)`, {
       fontFamily: FONT.family,
-      fontSize: "15px",
+      fontSize: "16px",
       color: COLORS.parchmentCss,
     }),
   );

@@ -274,6 +274,44 @@ def emit_anim(key, src_file, cell_target):
     report["anim"].append((key, len(frames)))
 
 
+
+def emit_poses(key, src_file, cell_target):
+    """Slice a character body-sheet into individual figures (alpha blobs in
+    reading order) and pack them into a uniform-cell spritesheet. The figures
+    are hand-verified poses; anim frame indices live in src/ui/art.ts."""
+    im = Image.open(os.path.join(SRC, src_file))
+    rgba = recover_alpha(im)
+    if rgba is None:
+        report["failed"].append((src_file, "poses: no checker"))
+        return
+    a = np.asarray(rgba)[:, :, 3] > 8
+    labels, n = ndimage.label(a)
+    blobs = []
+    for lb in range(1, n + 1):
+        ys, xs = np.where(labels == lb)
+        if len(xs) < (rgba.width * rgba.height) * 0.0008:
+            continue
+        blobs.append((int(xs.min()), int(ys.min()), int(xs.max()), int(ys.max())))
+    blobs.sort(key=lambda b: (round(b[1] / 80), b[0]))
+    frames = [rgba.crop((b[0], b[1], b[2] + 1, b[3] + 1)) for b in blobs]
+    if len(frames) < 4:
+        report["failed"].append((src_file, f"poses: only {len(frames)} figures"))
+        return
+    cw = max(f.width for f in frames)
+    ch = max(f.height for f in frames)
+    scale = min(1.0, cell_target / ch)
+    cw, ch = round(cw * scale), round(ch * scale)
+    sheet = Image.new("RGBA", (cw * len(frames), ch), (0, 0, 0, 0))
+    for i, f in enumerate(frames):
+        f = f.resize((max(1, round(f.width * scale)), max(1, round(f.height * scale))), Image.LANCZOS)
+        sheet.paste(f, (i * cw + (cw - f.width) // 2, ch - f.height))
+    path = os.path.join(OUT, f"{key}.webp")
+    sheet.save(path, "WEBP", quality=WEBP_Q, method=6)
+    manifest[key] = {"file": f"{key}.webp", "w": sheet.width, "h": sheet.height,
+                     "frames": len(frames), "fw": cw, "fh": ch}
+    report["anim"].append((key, len(frames)))
+
+
 # ── The catalogue ────────────────────────────────────────────────────────────
 
 def main():
@@ -385,6 +423,10 @@ def main():
     icon = Image.open(os.path.join(SRC, "p0_store_asset_app_icon_keep_gate_key_motif_v001.png")).convert("RGB")
     icon.resize((180, 180), Image.LANCZOS).save("public/apple-touch-icon.png")
     icon.resize((64, 64), Image.LANCZOS).save("public/favicon.png")
+
+    # Character body-sheets — sliced into pose figures (walking guards etc.).
+    emit_poses("sprite_guard", "p0_keep_sprite_guard_regular_body_sheet_v001.png", 120)
+    emit_poses("sprite_prisoner", "p0_keep_sprite_prisoner_generic_body_sheet_v001.png", 120)
 
     # VFX — sliced to spritesheets where the strips are clean.
     emit_anim("vfx_fire_burst", "p0_vfx_fire_burst_v001.png", 160)

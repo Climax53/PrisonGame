@@ -50,7 +50,7 @@ export function buildRiotDecision(
     kind: "riot",
     day: state.day,
     prompt:
-      "The cells erupt in riot — shouting, smoke, and the clang of bars. The warders look to you for orders.",
+      "The cells erupt in riot — shouting, smoke, and the clang of bars. The guards look to you for orders.",
     options: [
       {
         id: "crush",
@@ -192,8 +192,8 @@ function resolveRiot(
     state.resources.coin -= 5 * deaths;
     const msg =
       deaths > 0
-        ? `The warders club the riot down. ${deaths} dead, order restored — but tongues wag.`
-        : "The warders club the riot down before blood is spilt.";
+        ? `The guards club the riot down. ${deaths} dead, order restored — but tongues wag.`
+        : "The guards club the riot down before blood is spilt.";
     pushLog(state, msg, "bad");
     return { ok: true, message: msg, tone: "bad", deaths };
   }

@@ -6,6 +6,14 @@ import Phaser from "phaser";
 import { GameScene } from "./scenes/GameScene";
 import { COLORS, VIEW } from "./ui/theme";
 
+// Fill the WHOLE screen: modern phones are ~19.5:9, far taller than the old
+// fixed 9:16 canvas, which letterboxed the game between dead black bands
+// (playtest finding). Match the logical canvas to the device aspect (clamped
+// to sane bounds) so FIT scaling becomes a perfect edge-to-edge fill — and
+// everything on screen renders proportionally LARGER.
+const aspect = window.innerHeight / Math.max(1, window.innerWidth);
+VIEW.height = Math.round(Math.min(1720, Math.max(1280, VIEW.width * aspect)));
+
 const config: Phaser.Types.Core.GameConfig = {
   type: Phaser.AUTO,
   parent: "game",

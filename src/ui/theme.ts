@@ -68,7 +68,9 @@ export const FONT = {
   medieval: '"MedievalSharp", "Palatino", serif',
 };
 
-/** Logical design resolution. The game scales to fit any phone via Phaser FIT. */
+/** Logical design resolution. Width is fixed at 720; HEIGHT is recomputed at
+ * boot (src/main.ts) to match the device aspect so the game fills the whole
+ * screen — layouts must anchor to VIEW.height, never hard-code 1280. */
 export const VIEW = {
   width: 720,
   height: 1280,

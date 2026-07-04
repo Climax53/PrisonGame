@@ -23,8 +23,9 @@ import { RARITY_ORDER, type GameState, type Rarity } from "./types";
  * v4 — adds warden class, identity (names/heraldry), pacing, buildings, legends
  * v5 — adds the hour clock, guard morale, prisoner cells, barracks/tavern
  * v6 — adds optional prisoner traits (traits.ts)
+ * v7 — adds Prisoner.revealed (intake interviews, interview.ts)
  */
-export const SAVE_VERSION = 6;
+export const SAVE_VERSION = 7;
 
 export interface SaveBlob {
   version: number;
@@ -71,6 +72,13 @@ const MIGRATIONS: Record<number, (s: GameState) => void> = {
     // v5 → v6: Prisoner.trait is optional — an old inmate simply has none.
     // Nothing to fill; the repair pass drops any garbage trait values.
   },
+  6: (s) => {
+    // v6 → v7: intake interviews. Pre-interview inmates were shown their
+    // trait in full, so mark their temperament as already revealed — an old
+    // save must never re-hide what the player has seen.
+    for (const p of s.prisoners) p.revealed ??= ["temper"];
+    for (const o of s.offers ?? []) o.prisoner.revealed ??= ["temper"];
+  },
 };
 
 /**
@@ -94,9 +102,24 @@ function repair(s: GameState): GameState | null {
       delete p.trait;
     }
   };
+  // Garbage `revealed` collapses to ["temper"] (treat as known — never hide
+  // info an old save may already have shown); valid arrays keep only real
+  // topics. Missing/undefined stays undefined (= pre-interview inmate, known).
+  const VALID_TOPICS = ["temper", "skills", "past"];
+  const scrubRevealed = (p: GameState["prisoners"][number]): void => {
+    if (p.revealed === undefined) return;
+    if (!Array.isArray(p.revealed)) {
+      p.revealed = ["temper"];
+      return;
+    }
+    p.revealed = p.revealed.filter(
+      (t, i) => VALID_TOPICS.includes(t) && p.revealed!.indexOf(t) === i,
+    );
+  };
   for (const p of s.prisoners) {
     if (!validRarity(p.rarity)) p.rarity = "common";
     scrubTrait(p);
+    scrubRevealed(p);
   }
   for (const g of s.guards) {
     if (!validRarity(g.rarity)) g.rarity = "common";
@@ -104,6 +127,7 @@ function repair(s: GameState): GameState | null {
   for (const o of s.offers ?? []) {
     if (!validRarity(o.prisoner.rarity)) o.prisoner.rarity = "common";
     scrubTrait(o.prisoner);
+    scrubRevealed(o.prisoner);
   }
   if (typeof s.crownDays !== "number" || Number.isNaN(s.crownDays)) s.crownDays = 0;
   if (typeof s.winterDaysLeft !== "number" || Number.isNaN(s.winterDaysLeft)) {

@@ -151,7 +151,7 @@ function consumeFood(state: GameState): boolean {
     state.resources.food = 0;
     guardsFed = false;
     if (state.guards.length > 0) {
-      pushLog(state, "The warders' mess stands empty — hungry men make poor sentries.", "bad");
+      pushLog(state, "The guards' mess stands empty — hungry men make poor sentries.", "bad");
     }
   }
 
@@ -200,7 +200,7 @@ function updateGuardNeeds(
     g.morale = clamp(g.morale + delta, 0, 100);
   }
   if (crowded && state.guards.length > 0) {
-    pushLog(state, "Warders grumble over shared bunks — the quarters are full.", "bad");
+    pushLog(state, "Guards grumble over shared bunks — the quarters are full.", "bad");
   }
   // Resignations: checked in roster order for determinism.
   for (let i = state.guards.length - 1; i >= 0; i--) {
@@ -306,10 +306,96 @@ function brutalityCasualties(state: GameState, rng: Rng): number {
       state.stats.totalDeaths += 1;
       // Beating inmates to death darkens the warden's soul.
       adjustMorality(state, -MOR.perBrutalDeath);
-      pushLog(state, `${p.name} dies under the warders' discipline.`, "bad");
+      pushLog(state, `${p.name} dies under the guards' discipline.`, "bad");
     }
   }
   return deaths;
+}
+
+/**
+ * Pure pair-compatibility: the chance two neighbouring inmates come to blows
+ * in the night. Exported so the UI can warn the player before they place a
+ * prisoner beside a bad neighbour (see the movePrisoner action).
+ */
+export function cellConflictChance(a: Prisoner, b: Prisoner): number {
+  let chance = 0;
+  if (a.trait === "brawler" && b.trait === "brawler") chance += 0.3;
+  if (a.unrest > 65 && b.unrest > 65) chance += 0.18;
+  if (
+    (a.severity === "violent" && b.severity === "petty") ||
+    (a.severity === "petty" && b.severity === "violent")
+  ) {
+    chance += 0.1;
+  }
+  return Math.min(0.5, chance);
+}
+
+/**
+ * Night brawls between cell neighbours. The cell block is two columns wide:
+ * cells (2k, 2k+1) share a row; cells |a−b| = 2 are vertical neighbours. Each
+ * adjacent pair of living inmates rolls once (stable order by cell index).
+ * A fight bloodies both combatants; a skilled watch may break it up early —
+ * at a small risk of losing the intervening guard. MUST run before
+ * resolveHealthDeaths so beaten inmates die through the standard resolution.
+ */
+function nightBrawls(state: GameState, rng: Rng): void {
+  const byCell = new Map<number, Prisoner>();
+  for (const p of state.prisoners) {
+    if (p.alive && typeof p.cell === "number") byCell.set(p.cell, p);
+  }
+  const cells = [...byCell.keys()].sort((a, b) => a - b);
+  const pairs: Array<[Prisoner, Prisoner]> = [];
+  for (const c of cells) {
+    const p = byCell.get(c)!;
+    // Row partner (even cell pairs with the odd one beside it) …
+    if (c % 2 === 0 && byCell.has(c + 1)) pairs.push([p, byCell.get(c + 1)!]);
+    // … and the vertical neighbour two cells on.
+    if (byCell.has(c + 2)) pairs.push([p, byCell.get(c + 2)!]);
+  }
+
+  for (const [a, b] of pairs) {
+    if (!rng.chance(cellConflictChance(a, b))) continue;
+    let damage = rng.int(8, 22);
+    let brokenUp = false;
+    let guardLost: string | undefined;
+    if (
+      state.guards.length > 0 &&
+      rng.chance(effectiveGuardSkill(state) / 140)
+    ) {
+      brokenUp = true;
+      damage = Math.ceil(damage / 2);
+      if (rng.chance(0.05)) {
+        // The fight claims the man who stepped in: the lowest-morale guard.
+        let idx = 0;
+        for (let i = 1; i < state.guards.length; i++) {
+          if (state.guards[i].morale < state.guards[idx].morale) idx = i;
+        }
+        const [fallen] = state.guards.splice(idx, 1);
+        guardLost = fallen.name;
+      }
+    }
+    for (const p of [a, b]) {
+      p.health = clamp(p.health - damage, 0, 100);
+      p.unrest = clamp(p.unrest + 10, 0, 100);
+    }
+    if (brokenUp) {
+      pushLog(
+        state,
+        `The watch pulls ${a.name} and ${b.name} apart before the worst of it.`,
+        "bad",
+      );
+    } else {
+      pushLog(
+        state,
+        `A fight breaks out between ${a.name} and ${b.name} in the cells.`,
+        "bad",
+      );
+    }
+    if (guardLost) {
+      adjustReputation(state, -2);
+      pushLog(state, `${guardLost} is killed breaking up the fight.`, "bad");
+    }
+  }
 }
 
 /** Resolve prisoners whose health hit zero (starvation, cold, labour). */
@@ -403,6 +489,10 @@ export function retire(state: GameState): GameState {
   updateGuardNeeds(state, rng, guardsFed, paidInFull);
 
   runBuildings(state);
+
+  // Neighbours settle scores after lights-out — before resolveHealthDeaths so
+  // an inmate beaten to ≤0 health dies through the ordinary resolution below.
+  nightBrawls(state, rng);
 
   const preDeaths =
     resolveHealthDeaths(state) + brutalityCasualties(state, rng);
