@@ -64,6 +64,7 @@ import {
   keepExteriorKey,
   LABOR_ICON_KEY,
   prisonerPortraitKey,
+  prisonerTint,
   queueArt,
   rarityFrameKey,
   rarityPipKey,
@@ -118,6 +119,9 @@ export class GameScene extends Phaser.Scene {
   private dayInFlight = false;
   /** The looping hour timer — queried for smooth between-tick countdowns. */
   private hourTimer!: Phaser.Time.TimerEvent;
+  /** Looping ambience tweens (patrols, snow, glows) — killed on re-render so
+   * tab switching can never accumulate zombie loops (freeze reports). */
+  private ambient: Phaser.Tweens.Tween[] = [];
   /** Live HUD elements updated between renders by the display ticker. */
   private clockLabel?: Phaser.GameObjects.Text;
   private sunFill?: Phaser.GameObjects.Rectangle;
@@ -596,8 +600,19 @@ export class GameScene extends Phaser.Scene {
     this.updateClock();
   }
 
+  /** Register a looping tween so renders can retire it. */
+  private loop(t: Phaser.Tweens.Tween): Phaser.Tweens.Tween {
+    this.ambient.push(t);
+    return t;
+  }
+
   // ── Content ──────────────────────────────────────────────────────────────
   private renderContent(): void {
+    // Retire every looping ambience tween BEFORE the rebuild — orphaned loops
+    // pile up across tab switches and eventually starve the frame budget.
+    for (const t of this.ambient) t.remove();
+    this.ambient = [];
+    this.tweens.killTweensOf(this.content.list);
     this.content.removeAll(true);
     if (this.state.gameOver) {
       this.renderGameOver();
@@ -784,12 +799,14 @@ export class GameScene extends Phaser.Scene {
         .setAlpha(0.55);
       this.content.add(snow);
       if (!getSettings().reducedMotion) {
-        this.tweens.add({
-          targets: snow,
-          tilePositionY: -512,
-          duration: 14000,
-          repeat: -1,
-        });
+        this.loop(
+          this.tweens.add({
+            targets: snow,
+            tilePositionY: -512,
+            duration: 14000,
+            repeat: -1,
+          }),
+        );
       }
     }
 
@@ -936,6 +953,7 @@ export class GameScene extends Phaser.Scene {
 
     // Portrait in a rarity frame — the inmate at a glance.
     const portrait = artImage(this, prisonerPortraitKey(p), 66, h / 2, 78, 78);
+    if (portrait) portrait.setTint(prisonerTint(p));
     let textX = 34;
     if (portrait) {
       panel.add(portrait);
@@ -1024,6 +1042,7 @@ export class GameScene extends Phaser.Scene {
       const py = (VIEW.height - h) / 2;
       const panel = makePanel(this, 32, py, w, h, fresh ? "⛓  The New Arrival" : "🗣  The Interview Room");
       const portrait = artImage(this, prisonerPortraitKey(p), 90, 110, 110, 110);
+      if (portrait) portrait.setTint(prisonerTint(p));
       if (portrait) {
         panel.add(portrait);
         const frame = artImage(this, rarityFrameKey(p.rarity), 90, 110, 132, 132);
@@ -1161,6 +1180,7 @@ export class GameScene extends Phaser.Scene {
     );
 
     const portrait = artImage(this, prisonerPortraitKey(p), w / 2, 118, 170, 170);
+    if (portrait) portrait.setTint(prisonerTint(p));
     if (portrait) {
       panel.add(portrait);
       const frame = artImage(this, rarityFrameKey(p.rarity), w / 2, 118, 206, 206);
@@ -1376,7 +1396,8 @@ export class GameScene extends Phaser.Scene {
         spr.play("guard_walk_down");
         this.content.add(spr);
         if (!getSettings().reducedMotion && blockH > 200) {
-          this.tweens.add({
+          this.loop(
+            this.tweens.add({
             targets: spr,
             y: gridTop + blockH - 50,
             duration: 9000 + g * 2300,
@@ -1386,7 +1407,8 @@ export class GameScene extends Phaser.Scene {
             ease: "Linear",
             onYoyo: () => spr.play("guard_walk_up"),
             onRepeat: () => spr.play("guard_walk_down"),
-          });
+            }),
+          );
         }
       } else {
         const mark = this.add
@@ -1476,6 +1498,7 @@ export class GameScene extends Phaser.Scene {
         const px = x + cellW / 2;
         const py = y + Math.min(cellH / 2 - 6, 40);
         const portrait = artImage(this, prisonerPortraitKey(p), px, py, Math.min(84, cellH - 52), Math.min(84, cellH - 52));
+        if (portrait) portrait.setTint(prisonerTint(p));
         if (portrait) {
           this.content.add(portrait);
           const frame = artImage(this, rarityFrameKey(p.rarity), px, py, Math.min(102, cellH - 36), Math.min(102, cellH - 36));
@@ -1483,21 +1506,21 @@ export class GameScene extends Phaser.Scene {
         }
         this.content.add(
           this.add
-            .text(px, y + cellH - 46, clip(p.name, Math.floor((cellW - 12) / 10)), {
+            .text(px, y + cellH - 50, clip(p.name, Math.floor((cellW - 12) / 11)), {
               fontFamily: FONT.medieval,
-              fontSize: "17px",
+              fontSize: "19px",
               color: COLORS.rarity[p.rarity] ?? COLORS.parchmentCss,
             })
             .setOrigin(0.5, 0)
             .setShadow(1, 1, "#000000", 2),
         );
-        const jobIcon = artImage(this, LABOR_ICON_KEY[p.assignment], px - 36, y + cellH - 13, 22, 22);
+        const jobIcon = artImage(this, LABOR_ICON_KEY[p.assignment], px - 44, y + cellH - 15, 28, 28);
         if (jobIcon) this.content.add(jobIcon);
         this.content.add(
           this.add
-            .text(jobIcon ? px - 22 : px, y + cellH - 21, p.assignment === "none" ? "resting" : p.assignment, {
+            .text(jobIcon ? px - 26 : px, y + cellH - 24, p.assignment === "none" ? "resting" : p.assignment, {
               fontFamily: FONT.family,
-              fontSize: "13px",
+              fontSize: "17px",
               color: COLORS.goldCss,
             })
             .setOrigin(jobIcon ? 0 : 0.5, 0.5)
@@ -1563,6 +1586,7 @@ export class GameScene extends Phaser.Scene {
 
       // The offered inmate, framed by their notoriety.
       const portrait = artImage(this, prisonerPortraitKey(p), 84, 106, 104, 104);
+      if (portrait) portrait.setTint(prisonerTint(p));
       let tx = 36;
       if (portrait) {
         panel.add(portrait);
@@ -1812,14 +1836,16 @@ export class GameScene extends Phaser.Scene {
     this.content.add(bar);
     // At the bell, the button breathes — the eye is drawn to the one action left.
     if (evening && !getSettings().reducedMotion) {
-      this.tweens.add({
-        targets: bar,
-        alpha: { from: 1, to: 0.75 },
-        duration: 900,
-        yoyo: true,
-        repeat: -1,
-        ease: "Sine.easeInOut",
-      });
+      this.loop(
+        this.tweens.add({
+          targets: bar,
+          alpha: { from: 1, to: 0.75 },
+          duration: 900,
+          yoyo: true,
+          repeat: -1,
+          ease: "Sine.easeInOut",
+        }),
+      );
     }
   }
 

@@ -22,12 +22,16 @@
         font-display: swap;
       }
       html, body {
-        margin: 0; padding: 0; height: 100%;
+        margin: 0; padding: 0;
         background: #1a1410; overflow: hidden;
         -webkit-tap-highlight-color: transparent;
         font-family: ui-monospace, "Courier New", monospace;
       }
-      #game { width: 100vw; height: 100vh; touch-action: none; }
+      /* position:fixed kills iOS rubber-band scrolling; dvh tracks the REAL
+         visible viewport (100vh includes the collapsed URL bar and made the
+         page slide off the bottom). */
+      body { position: fixed; inset: 0; width: 100vw; height: 100vh; height: 100dvh; }
+      #game { width: 100vw; height: 100vh; height: 100dvh; touch-action: none; }
     </style>
   </head>
   <body>

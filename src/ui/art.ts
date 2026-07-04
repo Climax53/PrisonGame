@@ -134,6 +134,15 @@ export function prisonerPortraitKey(p: Prisoner): string {
   return `base_${sev[p.severity]}_${n % 2 === 0 ? "m" : "f"}`;
 }
 
+/** Subtle per-prisoner tint so the 8 portrait bases read less repetitive —
+ * six near-white shifts (warm, cool, pale, ruddy…) cycled by id. Real variety
+ * (more painted bases) is in the round-3 asset request. */
+export function prisonerTint(p: Prisoner): number {
+  const shades = [0xffffff, 0xf2e4d2, 0xdfe6f2, 0xe8f0dd, 0xf4dcdc, 0xe6dcf4];
+  const n = parseInt(p.id.split("_")[1] ?? "0", 10) || 0;
+  return shades[Math.floor(n / 2) % shades.length];
+}
+
 export function rarityFrameKey(rarity: string): string {
   return `frame_${rarity}`;
 }
