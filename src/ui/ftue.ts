@@ -92,19 +92,19 @@ export function buildDecreeStrip(
   const w = VIEW.width - 32;
   const doneCount = DECREE_ORDER.filter((s) => f.steps[s]).length;
   const next = DECREE_ORDER.find((s) => !f.steps[s])!;
-  const strip = makePanel(scene, 16, y, w, 44);
+  const strip = makePanel(scene, 16, y, w, 56);
   strip.add(
-    scene.add.text(12, 7, "📜", { fontFamily: FONT.family, fontSize: "20px" }),
+    scene.add.text(12, 12, "📜", { fontFamily: FONT.family, fontSize: "26px" }),
   );
   strip.add(
-    scene.add.text(44, 5, `First Decrees ${doneCount}/${DECREE_ORDER.length}:`, {
+    scene.add.text(50, 6, `First Decrees ${doneCount}/${DECREE_ORDER.length}`, {
       fontFamily: FONT.medieval,
-      fontSize: "17px",
+      fontSize: "21px",
       color: COLORS.goldCss,
     }),
   );
   strip.add(
-    scene.add.text(256, 10, `${DECREE_TEXT[next]}  (+${DECREE_REWARD}🪙)`, {
+    scene.add.text(50, 32, `→ ${DECREE_TEXT[next]}  (+${DECREE_REWARD}🪙)`, {
       fontFamily: FONT.family,
       fontSize: "16px",
       color: COLORS.parchmentCss,
@@ -112,7 +112,7 @@ export function buildDecreeStrip(
   );
   strip.add(
     makeButton(scene, {
-      x: w - 38, y: 7, width: 30, height: 30, label: "✕", fontSize: 14,
+      x: w - 46, y: 10, width: 36, height: 36, label: "✕", fontSize: 17,
       fill: COLORS.panelLight,
       onTap: () => {
         dismissDecrees();
@@ -160,10 +160,10 @@ export function showAppointmentLetter(
         `Let it be known that ${state.wardenName}\nis appointed Warden of ${state.keepName}.\n\nHold the Crown's prisoners. Keep its peace.\nCollect its coin. Answer for its dead.\n\nThe magistrate watches with interest —\nand encloses a signing bonus of 40 coin.`,
         {
           fontFamily: FONT.family,
-          fontSize: "17px",
+          fontSize: "20px",
           color: COLORS.parchmentCss,
           align: "center",
-          lineSpacing: 5,
+          lineSpacing: 6,
         },
       )
       .setOrigin(0.5, 0),
