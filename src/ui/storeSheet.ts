@@ -33,6 +33,10 @@ export interface StoreSheetHooks {
   toast: (msg: string, color?: string) => void;
 }
 
+function clipLine(text: string, max: number): string {
+  return text.length > max ? `${text.slice(0, max - 1)}…` : text;
+}
+
 export function openStoreSheet(scene: Phaser.Scene, hooks: StoreSheetHooks): void {
   const layer = scene.add.container(0, 0).setDepth(880);
   const close = () => {
@@ -56,7 +60,7 @@ export function openStoreSheet(scene: Phaser.Scene, hooks: StoreSheetHooks): voi
       scene.add
         .text(w - 14, 12, `${profile.crowns} 👑`, {
           fontFamily: FONT.display,
-          fontSize: "26px",
+          fontSize: "32px",
           color: COLORS.goldCss,
         })
         .setOrigin(1, 0),
@@ -64,23 +68,23 @@ export function openStoreSheet(scene: Phaser.Scene, hooks: StoreSheetHooks): voi
     let y = 46;
     panel.add(
       scene.add.text(14, y, "EARNING CROWNS — no purchase needed:", {
-        fontFamily: FONT.medieval, fontSize: "16px", color: COLORS.goldCss,
+        fontFamily: FONT.medieval, fontSize: "21px", color: COLORS.goldCss,
       }),
     );
-    y += 24;
+    y += 32;
     for (const line of [
-      "🏆 Deeds (achievements) pay 10–25 👑 each — 195 👑 in total",
-      "📅 The daily challenge pays 15 👑 every day you finish it",
-      "🛒 Crown packs below arrive with the App Store release",
+      "🏆 Deeds pay 10–25 👑 each (195 total)",
+      "📅 Daily challenge: 15 👑 per finish",
+      "🛒 Packs arrive with the store release",
     ]) {
       panel.add(
         scene.add.text(20, y, line, {
-          fontFamily: FONT.family, fontSize: "14px", color: COLORS.parchmentCss,
+          fontFamily: FONT.family, fontSize: "18px", color: COLORS.parchmentCss,
         }),
       );
-      y += 22;
+      y += 28;
     }
-    y += 6;
+    y += 10;
 
     // ── Crown packs (storefront stub — honest about not charging yet) ──
     const packW = (w - 28 - 16) / 3;
@@ -88,8 +92,8 @@ export function openStoreSheet(scene: Phaser.Scene, hooks: StoreSheetHooks): voi
       const bx = 14 + i * (packW + 8);
       panel.add(
         makeButton(scene, {
-          x: bx, y, width: packW, height: 64,
-          label: `${p.crowns} 👑\n${p.priceUsd}`, fontSize: 15,
+          x: bx, y, width: packW, height: 76,
+          label: `${p.crowns} 👑\n${p.priceUsd}`, fontSize: 19,
           onTap: () => {
             void purchaseCrownPack(p.id).then((r) => {
               if (!r.ok) hooks.toast(r.reason ?? "The mint is closed.", COLORS.goldCss);
@@ -99,34 +103,34 @@ export function openStoreSheet(scene: Phaser.Scene, hooks: StoreSheetHooks): voi
         }),
       );
     });
-    y += 76;
+    y += 90;
 
     // ── Keep themes (jail designs — cosmetic DLC) ──
     panel.add(
       scene.add.text(14, y, "Keep Themes", {
-        fontFamily: FONT.display, fontSize: "22px", color: COLORS.goldCss,
+        fontFamily: FONT.display, fontSize: "27px", color: COLORS.goldCss,
       }),
     );
-    y += 30;
+    y += 38;
     for (const t of THEMES) {
       const owned = profile.ownedThemes.includes(t.id);
       const active = profile.activeTheme === t.id;
       panel.add(
         scene.add.text(14, y + 4, `${t.name}`, {
-          fontFamily: FONT.medieval, fontSize: "17px",
+          fontFamily: FONT.medieval, fontSize: "21px",
           color: active ? COLORS.goldCss : COLORS.parchmentCss,
         }),
       );
       panel.add(
-        scene.add.text(14, y + 26, t.blurb, {
-          fontFamily: FONT.family, fontSize: "12px", color: COLORS.neutralCss,
+        scene.add.text(14, y + 30, clipLine(t.blurb, 44), {
+          fontFamily: FONT.family, fontSize: "15px", color: COLORS.neutralCss,
         }),
       );
       panel.add(
         makeButton(scene, {
-          x: w - 132, y, width: 120, height: 40,
+          x: w - 148, y, width: 136, height: 50,
           label: active ? "✓ Active" : owned ? "Apply" : `${t.costCrowns} 👑`,
-          fontSize: 15,
+          fontSize: 19,
           fill: active ? COLORS.gold : COLORS.panelLight,
           textColor: active ? COLORS.inkCss : COLORS.parchmentCss,
           enabled: !active,
@@ -141,22 +145,22 @@ export function openStoreSheet(scene: Phaser.Scene, hooks: StoreSheetHooks): voi
           },
         }),
       );
-      y += 52;
+      y += 60;
     }
 
     // ── Warden shortcut unlocks ──
     panel.add(
-      scene.add.text(14, y, "Wardens (every one earnable by deeds)", {
-        fontFamily: FONT.display, fontSize: "22px", color: COLORS.goldCss,
+      scene.add.text(14, y, "Wardens (all earnable by deeds)", {
+        fontFamily: FONT.display, fontSize: "27px", color: COLORS.goldCss,
       }),
     );
-    y += 30;
+    y += 38;
     const avail = new Set(availableWardens());
     const locked = WARDENS.filter((wd) => !avail.has(wd.id));
     if (locked.length === 0) {
       panel.add(
         scene.add.text(14, y + 2, "The full roster stands unlocked. Well ruled.", {
-          fontFamily: FONT.family, fontSize: "13px", color: COLORS.goodCss,
+          fontFamily: FONT.family, fontSize: "17px", color: COLORS.goodCss,
         }),
       );
       y += 26;
@@ -164,13 +168,13 @@ export function openStoreSheet(scene: Phaser.Scene, hooks: StoreSheetHooks): voi
     for (const wd of locked.slice(0, 3)) {
       panel.add(
         scene.add.text(14, y + 8, `${wd.glyph} ${wd.name}`, {
-          fontFamily: FONT.medieval, fontSize: "16px", color: COLORS.parchmentCss,
+          fontFamily: FONT.medieval, fontSize: "20px", color: COLORS.parchmentCss,
         }),
       );
       panel.add(
         makeButton(scene, {
-          x: w - 132, y, width: 120, height: 40,
-          label: `${WARDEN_UNLOCK_COST} 👑`, fontSize: 15,
+          x: w - 148, y, width: 136, height: 50,
+          label: `${WARDEN_UNLOCK_COST} 👑`, fontSize: 19,
           enabled: profile.crowns >= WARDEN_UNLOCK_COST,
           onTap: () => {
             const res = buyWardenUnlock(profile, wd.id);
@@ -183,28 +187,28 @@ export function openStoreSheet(scene: Phaser.Scene, hooks: StoreSheetHooks): voi
           },
         }),
       );
-      y += 48;
+      y += 58;
     }
 
     // ── Coin conversion into the current run ──
     if (hooks.state && !hooks.state.gameOver) {
       panel.add(
         scene.add.text(14, y, "War Chest", {
-          fontFamily: FONT.display, fontSize: "22px", color: COLORS.goldCss,
+          fontFamily: FONT.display, fontSize: "27px", color: COLORS.goldCss,
         }),
       );
-      y += 30;
+      y += 38;
       const crowns = COIN_CONVERT_MIN;
       const coin = crowns * COIN_PER_CROWN;
       panel.add(
-        scene.add.text(14, y + 8, `Melt ${crowns} 👑 into ${coin} 🪙 for this reign`, {
-          fontFamily: FONT.family, fontSize: "14px", color: COLORS.parchmentCss,
+        scene.add.text(14, y + 12, `Melt ${crowns} 👑 → ${coin} 🪙 this reign`, {
+          fontFamily: FONT.family, fontSize: "18px", color: COLORS.parchmentCss,
         }),
       );
       panel.add(
         makeButton(scene, {
-          x: w - 132, y, width: 120, height: 40,
-          label: "Melt", fontSize: 15,
+          x: w - 148, y, width: 136, height: 50,
+          label: "Melt", fontSize: 19,
           enabled: profile.crowns >= crowns,
           onTap: () => {
             const res = convertCrownsToCoin(profile, crowns);

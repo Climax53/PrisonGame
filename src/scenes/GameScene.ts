@@ -1324,17 +1324,21 @@ export class GameScene extends Phaser.Scene {
     const yardH = yard.length > 0 ? 76 : 0;
     const availH = this.contentBottom - gridTop - yardH - WALL - 10;
     const gap = 8;
-    // Cells STRETCH to fill the whole block — no dead space below the map.
-    const cellH = Math.max(96, Math.floor(availH / rows) - gap);
+    // Cells stretch to use the band, but cap so floors don't blur; the whole
+    // walled block centres in whatever remains.
+    const cellH = Math.max(96, Math.min(230, Math.floor(availH / rows) - gap));
     const BARS_W = 18;
     const CORRIDOR_W = 110;
     const cellW = (VIEW.width - 32 - 2 * WALL - CORRIDOR_W - 2 * BARS_W) / 2;
     const corridorX = 16 + WALL + cellW + BARS_W;
     const blockH = rows * (cellH + gap) - gap;
+    // Centre the walled block in the available vertical band.
+    const slack = Math.max(0, availH - blockH);
+    const gridTopC = gridTop + Math.floor(slack / 2);
 
     // ── The outer wall: a ring of the artist's stone around the whole block ──
     const wallX0 = 16;
-    const wallY0 = gridTop - WALL;
+    const wallY0 = gridTopC - WALL;
     const wallW = VIEW.width - 32;
     const wallH = blockH + WALL * 2;
     for (const [wx, wy, ww, wh] of [
@@ -1363,25 +1367,25 @@ export class GameScene extends Phaser.Scene {
     // One continuous slice of worn stone (cover-cropped, no tiling) — any
     // repeating pattern down the shaft reads as a ladder, caught twice in
     // visual review.
-    const corridorArt = artCover(this, "tile_stone_floor_mossy", corridorX, gridTop, CORRIDOR_W, blockH, 0.5);
+    const corridorArt = artCover(this, "tile_stone_floor_mossy", corridorX, gridTopC, CORRIDOR_W, blockH, 0.5);
     if (corridorArt) {
       corridorArt.setTint(0x9f9f9f);
       this.content.add(corridorArt);
     } else {
       this.content.add(
-        this.add.rectangle(corridorX, gridTop, CORRIDOR_W, blockH, COLORS.panelLight).setOrigin(0, 0),
+        this.add.rectangle(corridorX, gridTopC, CORRIDOR_W, blockH, COLORS.panelLight).setOrigin(0, 0),
       );
     }
     // Soft edge shadows ground the walkway between the cell walls.
     this.content.add(
-      this.add.rectangle(corridorX, gridTop, 6, blockH, COLORS.shadow, 0.45).setOrigin(0, 0),
+      this.add.rectangle(corridorX, gridTopC, 6, blockH, COLORS.shadow, 0.45).setOrigin(0, 0),
     );
     this.content.add(
-      this.add.rectangle(corridorX + CORRIDOR_W - 6, gridTop, 6, blockH, COLORS.shadow, 0.45).setOrigin(0, 0),
+      this.add.rectangle(corridorX + CORRIDOR_W - 6, gridTopC, 6, blockH, COLORS.shadow, 0.45).setOrigin(0, 0),
     );
     if (this.anims.exists("vfx_torch_flame") && !getSettings().reducedMotion) {
       const torch = this.add
-        .sprite(corridorX + CORRIDOR_W / 2, gridTop + 26, "vfx_torch_flame")
+        .sprite(corridorX + CORRIDOR_W / 2, gridTopC + 26, "vfx_torch_flame")
         .setScale(0.5);
       torch.play("vfx_torch_flame");
       this.content.add(torch);
@@ -1392,14 +1396,14 @@ export class GameScene extends Phaser.Scene {
     for (let g = 0; g < patrols; g++) {
       const gx = corridorX + CORRIDOR_W / 2 + (g - 1) * 30;
       if (this.anims.exists("guard_walk_down")) {
-        const spr = this.add.sprite(gx, gridTop + 70 + g * 34, "sprite_guard").setScale(0.62);
+        const spr = this.add.sprite(gx, gridTopC + 70 + g * 34, "sprite_guard").setScale(0.62);
         spr.play("guard_walk_down");
         this.content.add(spr);
         if (!getSettings().reducedMotion && blockH > 200) {
           this.loop(
             this.tweens.add({
             targets: spr,
-            y: gridTop + blockH - 50,
+            y: gridTopC + blockH - 50,
             duration: 9000 + g * 2300,
             delay: g * 1300,
             yoyo: true,
@@ -1412,7 +1416,7 @@ export class GameScene extends Phaser.Scene {
         }
       } else {
         const mark = this.add
-          .text(gx, gridTop + 70, "⚔", {
+          .text(gx, gridTopC + 70, "⚔", {
             fontFamily: FONT.family,
             fontSize: "22px",
             color: COLORS.steelCss,
@@ -1424,7 +1428,7 @@ export class GameScene extends Phaser.Scene {
     if (s.guards.length === 0) {
       this.content.add(
         this.add
-          .text(corridorX + CORRIDOR_W / 2, gridTop + 70, "no\nwatch!", {
+          .text(corridorX + CORRIDOR_W / 2, gridTopC + 70, "no\nwatch!", {
             fontFamily: FONT.family,
             fontSize: "13px",
             color: COLORS.badCss,
@@ -1439,19 +1443,27 @@ export class GameScene extends Phaser.Scene {
       const row = Math.floor(i / 2);
       const leftSide = i % 2 === 0;
       const x = leftSide ? 16 + WALL : corridorX + CORRIDOR_W + BARS_W;
-      const y = gridTop + row * (cellH + gap);
+      const y = gridTopC + row * (cellH + gap);
       const barsX = leftSide ? 16 + WALL + cellW : corridorX + CORRIDOR_W;
       const p = byCell.get(i);
 
       // Cell interior: stone floor (dim when empty), straw for the occupied.
       const floorKey = floorKeys[i % floorKeys.length];
-      if (hasArt(this, floorKey)) {
-        const floor = this.add
-          .image(x, y, floorKey)
-          .setOrigin(0, 0)
-          .setDisplaySize(cellW, cellH)
-          .setTint(p ? 0x9a9a9a : 0x565656);
-        this.content.add(floor);
+      // Fully OPAQUE cell faces — occupied get the lit floor, empty get the
+      // open-door cell painting at full alpha (translucent faces let the page
+      // background bleed through — playtest finding).
+      if (p && hasArt(this, floorKey)) {
+        const floor = artCover(this, floorKey, x, y, cellW, cellH, 0.5);
+        if (floor) {
+          floor.setTint(0x9a9a9a);
+          this.content.add(floor);
+        }
+      } else if (!p && hasArt(this, "tile_cell_bars_door_open")) {
+        const face = artCover(this, "tile_cell_bars_door_open", x, y, cellW, cellH, 0.5);
+        if (face) {
+          face.setTint(0x6f6f6f);
+          this.content.add(face);
+        }
       } else {
         this.content.add(
           this.add.rectangle(x, y, cellW, cellH, p ? COLORS.panel : COLORS.shadow).setOrigin(0, 0),
@@ -1985,14 +1997,14 @@ export class GameScene extends Phaser.Scene {
       // Reduced motion toggle.
       const rm = getSettings().reducedMotion;
       panel.add(
-        this.add.text(16, 44, "Reduced motion", {
-          fontFamily: FONT.family, fontSize: "18px", color: COLORS.parchmentCss,
+        this.add.text(16, 48, "Reduced motion", {
+          fontFamily: FONT.medieval, fontSize: "22px", color: COLORS.parchmentCss,
         }),
       );
       panel.add(
         makeButton(this, {
-          x: w - 116, y: 36, width: 100, height: 40,
-          label: rm ? "ON" : "OFF", fontSize: 16,
+          x: w - 132, y: 40, width: 116, height: 48,
+          label: rm ? "ON" : "OFF", fontSize: 19,
           fill: rm ? COLORS.gold : COLORS.panelLight,
           textColor: rm ? COLORS.inkCss : COLORS.parchmentCss,
           onTap: () => {
@@ -2005,37 +2017,37 @@ export class GameScene extends Phaser.Scene {
       // Achievements ledger.
       const profile = getProfile();
       panel.add(
-        this.add.text(16, 96, `🏆 Deeds  (${profile.achievements.length}/${ACHIEVEMENTS.length})`, {
-          fontFamily: FONT.family, fontSize: "18px", color: COLORS.goldCss,
+        this.add.text(16, 104, `🏆 Deeds  (${profile.achievements.length}/${ACHIEVEMENTS.length})`, {
+          fontFamily: FONT.display, fontSize: "26px", color: COLORS.goldCss,
         }),
       );
       ACHIEVEMENTS.forEach((a, i) => {
         const earned = profile.achievements.includes(a.id);
-        const y = 128 + i * 44;
+        const y = 142 + i * 52;
         panel.add(
           this.add.text(16, y, `${earned ? "✓" : "·"} ${a.title}`, {
-            fontFamily: FONT.family, fontSize: "15px",
+            fontFamily: FONT.family, fontSize: "18px",
             color: earned ? COLORS.goodCss : COLORS.neutralCss,
           }),
         );
         panel.add(
-          this.add.text(32, y + 18, earned && a.unlocksWarden ? `${a.text}  → unlocked ${a.unlocksWarden}` : a.text, {
-            fontFamily: FONT.family, fontSize: "12px", color: COLORS.neutralCss,
+          this.add.text(34, y + 22, clip(earned && a.unlocksWarden ? `${a.text}  → unlocked ${a.unlocksWarden}` : a.text, 52), {
+            fontFamily: FONT.family, fontSize: "15px", color: COLORS.neutralCss,
           }),
         );
       });
 
-      const bottomY = 128 + ACHIEVEMENTS.length * 44 + 12;
+      const bottomY = 142 + ACHIEVEMENTS.length * 52 + 14;
       panel.add(
         this.add.text(16, bottomY, `Reigns: ${profile.runsCompleted}  •  Victories: ${profile.runsWon}  •  Longest: ${profile.bestReign}d`, {
-          fontFamily: FONT.family, fontSize: "13px", color: COLORS.neutralCss,
+          fontFamily: FONT.family, fontSize: "17px", color: COLORS.neutralCss,
         }),
       );
 
       panel.add(
         makeButton(this, {
-          x: 16, y: bottomY + 32, width: w - 32, height: 50,
-          label: `\u{1F451}  The Royal Mint  (${getProfile().crowns ?? 0} crowns)`, fontSize: 17,
+          x: 16, y: bottomY + 36, width: w - 32, height: 56,
+          label: `\u{1F451}  The Royal Mint  (${getProfile().crowns ?? 0} crowns)`, fontSize: 21,
           fill: COLORS.panelLight,
           onTap: () => {
             layer.destroy();
@@ -2045,8 +2057,8 @@ export class GameScene extends Phaser.Scene {
       );
       panel.add(
         makeButton(this, {
-          x: 16, y: bottomY + 94, width: (w - 44) / 2, height: 52,
-          label: "\u269c A New Reign", fontSize: 17,
+          x: 16, y: bottomY + 102, width: (w - 44) / 2, height: 58,
+          label: "\u269c A New Reign", fontSize: 20,
           fill: COLORS.blood,
           onTap: () => {
             layer.destroy();
@@ -2056,8 +2068,8 @@ export class GameScene extends Phaser.Scene {
       );
       panel.add(
         makeButton(this, {
-          x: 16 + (w - 44) / 2 + 12, y: bottomY + 94, width: (w - 44) / 2, height: 52,
-          label: "Close", fontSize: 17,
+          x: 16 + (w - 44) / 2 + 12, y: bottomY + 102, width: (w - 44) / 2, height: 58,
+          label: "Close", fontSize: 20,
           onTap: close,
         }),
       );
@@ -2094,21 +2106,21 @@ export class GameScene extends Phaser.Scene {
         : Math.round((panelW - 24) * (484 / 1328))
       : 0;
 
-    const panelH = 150 + bannerH + d.options.length * (optH + 14);
+    const panelH = 164 + bannerH + d.options.length * (optH + 14);
     const px = 28;
     const py = Math.max(40, (VIEW.height - panelH) / 2);
     const panel = makePanel(this, px, py, panelW, panelH, DECISION_TITLE[d.kind] ?? "A Hard Choice");
 
     if (bannerAvailable) {
       if (d.kind === "legend") {
-        const lp = artImage(this, bannerKey, panelW / 2, 40 + bannerH / 2, bannerH - 8, bannerH - 8);
+        const lp = artImage(this, bannerKey, panelW / 2, 48 + bannerH / 2, bannerH - 8, bannerH - 8);
         if (lp) panel.add(lp);
       } else {
-        const art = artCover(this, bannerKey, 12, 40, panelW - 24, bannerH - 6, 0.5);
+        const art = artCover(this, bannerKey, 12, 48, panelW - 24, bannerH - 6, 0.5);
         if (art) panel.add(art);
         panel.add(
           this.add
-            .rectangle(12, 40, panelW - 24, bannerH - 6)
+            .rectangle(12, 48, panelW - 24, bannerH - 6)
             .setOrigin(0, 0)
             .setStrokeStyle(2, COLORS.gold, 0.5),
         );
@@ -2116,7 +2128,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     panel.add(
-      this.add.text(16, 48 + bannerH, d.prompt, {
+      this.add.text(16, 56 + bannerH, d.prompt, {
         fontFamily: FONT.family,
         fontSize: "21px",
         color: COLORS.parchmentCss,
@@ -2126,7 +2138,7 @@ export class GameScene extends Phaser.Scene {
     );
 
     d.options.forEach((o, i) => {
-      const oy = 118 + bannerH + i * (optH + 14);
+      const oy = 128 + bannerH + i * (optH + 14);
       panel.add(
         makeButton(this, {
           x: 16,
@@ -2344,7 +2356,7 @@ export class GameScene extends Phaser.Scene {
     this.toastText = this.add
       .text(VIEW.width / 2, this.contentTop - 6, message, {
         fontFamily: FONT.family,
-        fontSize: "16px",
+        fontSize: "20px",
         color,
         backgroundColor: "#000000aa",
         padding: { x: 10, y: 6 },

@@ -69,7 +69,7 @@ export function runOnboarding(scene: Phaser.Scene, onDone: () => void): void {
 
     // Text card — placed clear of the highlight.
     const cardW = VIEW.width - 64;
-    const cardH = 240;
+    const cardH = 300;
     const highlightMidY = s.highlight ? s.highlight.y + s.highlight.h / 2 : VIEW.height / 2;
     const cardY = highlightMidY < VIEW.height / 2 ? VIEW.height - cardH - 140 : 180;
     const card = scene.add
@@ -78,7 +78,7 @@ export function runOnboarding(scene: Phaser.Scene, onDone: () => void): void {
       .setStrokeStyle(2, COLORS.gold, 0.8);
     const text = scene.add.text(48, cardY + 16, s.text, {
       fontFamily: FONT.family,
-      fontSize: "18px",
+      fontSize: "21px",
       color: COLORS.parchmentCss,
       wordWrap: { width: cardW - 32 },
       lineSpacing: 4,
@@ -112,7 +112,7 @@ export function runOnboarding(scene: Phaser.Scene, onDone: () => void): void {
       scene.add
         .text(VIEW.width / 2, cardY + cardH - 90, `${step + 1} / ${steps.length}`, {
           fontFamily: FONT.family,
-          fontSize: "13px",
+          fontSize: "16px",
           color: COLORS.neutralCss,
         })
         .setOrigin(0.5, 0),
