@@ -130,3 +130,72 @@ plus 3 crown-pack store tiles (C5 doubles for IAP listing images).
 **Grand totals requested for Round 3: ~120 art assets (≈40 P0) + 57 audio
 assets (7 music, 46 SFX, 4 ambience).** Nothing here is speculative — every
 line maps to a shipped system or a documented next feature.
+
+---
+
+## Part 3 — ROUND 3 EXPANDED (July 2026 addendum, per studio directive: "request a significant amount of more assets")
+
+Everything in Part 2 stands. This addendum grows the commission so the game
+reads as content-rich on every screen and every day of a long reign. Same
+delivery rules: PNG with TRUE alpha, 1024 masters, shipped palette.
+
+### F. Character depth (repetition is the enemy)
+
+| # | Asset | Qty |
+|---|---|---|
+| F1 | Prisoner bases, wave 2: FOUR archetypes per severity × gender (thief/poacher/cutpurse/beggar; brawler/arsonist/deserter/pit-fighter; heretic/spy/pamphleteer/poisoner; knight/abbess/magnate/pretender) | 32 |
+| F2 | Age/build variants for the 8 round-1 bases (old, young, heavy, gaunt) | 32 |
+| F3 | Guard bases: recruit/veteran/enforcer/captain × male & female | 8 |
+| F4 | Named LEGEND cell art: each legend's customized cell interior (Alaric's silks, Mirabel's stills, Odo's shrine) | 3 |
+| F5 | Portrait EMOTION overlays on the shared template (angry brow, sickly pallor, bruised eye, smile) — swap by state: unrest>70, health<40, post-brawl, freed | 4 |
+| F6 | Warden full-body throne-room portraits (setup screen upgrade) | 7 |
+
+### G. The living jail (every screen breathing)
+
+| # | Asset | Qty |
+|---|---|---|
+| G1 | Keep-growth exterior stages: capacity milestones redraw the postcard (6→10→14→20 cells) per tier | 16 |
+| G2 | Cell interior decor sets BY RARITY (common straw → mythic furnished) as alpha overlays | 6 |
+| G3 | Corridor & yard props w/ alpha: torch stand, brazier, water trough, notice board, chained ring, gallows silhouette, dog, cart | 8 |
+| G4 | Ambient critters, 4-frame uniform strips: rat scurry (re-export), crow hop/flight, cat prowl, moth-at-torch | 4 |
+| G5 | Walking sprites wave 2 on uniform 64×64 grids: warden (player), noble visitor, priest, tax assessor, gravedigger, escorted-prisoner pair | 6 |
+| G6 | Weather overlays (additive, tileable): rain, fog bank, ember drift for fires, god-rays for dawn | 4 |
+| G7 | Season re-dressings of all 4 tier exteriors: spring blossom + autumn harvest (summer = base, winter exists) | 8 |
+
+### H. UI chrome (replace every flat rectangle)
+
+| # | Asset | Qty |
+|---|---|---|
+| H1 | 9-slice parchment panel + dark wood panel + tooltip scroll | 3 |
+| H2 | Button set: gold primary / wood secondary / danger red, each normal+pressed+disabled (9-slice) | 9 |
+| H3 | Tab-bar art: stone tab housing + active glow | 2 |
+| H4 | Progress/bar art: reputation banner-bar, HP vial, unrest ember-bar, sun-arc day dial | 4 |
+| H5 | Coin/food/wood/bucket pile art at 3 fill states each (empty/half/full) for the HUD chips | 12 |
+| H6 | Speech-bubble parchment (9-slice) + shout variant for the mutter system | 2 |
+| H7 | The Royal Mint dressing: mint interior header, crown-pack pile art ×3, seal stamp | 5 |
+| H8 | Deed medallions: frame + 12 centers (matches achievements) | 13 |
+
+### I. Story & events (a banner for every beat)
+
+| # | Asset | Qty |
+|---|---|---|
+| I1 | Banners for the 6 new story cards (witch trial, tax assessor, gravedigger, festival, confession, rival warden) — P0, slots live | 6 |
+| I2 | Banners for auto events: friar, audit, cell search, winter onset, amnesty, bard, rat plague, fire, escape, inspection | 10 |
+| I3 | Legend beat art: 3 scenes per legend arc (9 total) | 9 |
+| I4 | Brawl vignette (cell fight) + guard-death memorial card | 2 |
+| I5 | Intake room backdrop (the questioning table) for the New Arrival sheet | 1 |
+| I6 | Daily-challenge banner + victory laurel card | 2 |
+
+### J. AUDIO — full catalog restated + additions (game is still silent)
+
+Everything in Part 2-D stands (7 music, 46 SFX, 4 ambience). Additions:
+| # | Asset | Qty |
+|---|---|---|
+| J1 | Brawl scuffle + guard whistle + intake questions murmur | 3 |
+| J2 | Mint chimes: purchase, insufficient, theme-applied | 3 |
+| J3 | Per-tier day-loop variations (village fiddle → crown chamber ensemble) | 4 |
+| J4 | UI haptic-audio pairs for the 12 most-tapped controls | 12 |
+
+**Part 3 totals: ~205 art + 22 audio additions (grand total with Part 2:
+~325 art, 79 audio).** Priority marks: F1, G3, G5, H1–H4, I1 first — they
+touch every minute of play.

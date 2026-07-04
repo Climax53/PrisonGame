@@ -11,7 +11,12 @@ import { COLORS, VIEW } from "./ui/theme";
 // (playtest finding). Match the logical canvas to the device aspect (clamped
 // to sane bounds) so FIT scaling becomes a perfect edge-to-edge fill — and
 // everything on screen renders proportionally LARGER.
-const aspect = window.innerHeight / Math.max(1, window.innerWidth);
+// visualViewport reports the truly VISIBLE area on mobile browsers (innerHeight
+// can include the not-yet-collapsed URL bar, over-sizing the canvas so the
+// bottom bar slid off-screen — playtest finding).
+const vw = window.visualViewport?.width ?? window.innerWidth;
+const vh = window.visualViewport?.height ?? window.innerHeight;
+const aspect = vh / Math.max(1, vw);
 VIEW.height = Math.round(Math.min(1720, Math.max(1280, VIEW.width * aspect)));
 
 const config: Phaser.Types.Core.GameConfig = {
