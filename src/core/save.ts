@@ -102,9 +102,24 @@ function repair(s: GameState): GameState | null {
       delete p.trait;
     }
   };
+  // Garbage `revealed` collapses to ["temper"] (treat as known — never hide
+  // info an old save may already have shown); valid arrays keep only real
+  // topics. Missing/undefined stays undefined (= pre-interview inmate, known).
+  const VALID_TOPICS = ["temper", "skills", "past"];
+  const scrubRevealed = (p: GameState["prisoners"][number]): void => {
+    if (p.revealed === undefined) return;
+    if (!Array.isArray(p.revealed)) {
+      p.revealed = ["temper"];
+      return;
+    }
+    p.revealed = p.revealed.filter(
+      (t, i) => VALID_TOPICS.includes(t) && p.revealed!.indexOf(t) === i,
+    );
+  };
   for (const p of s.prisoners) {
     if (!validRarity(p.rarity)) p.rarity = "common";
     scrubTrait(p);
+    scrubRevealed(p);
   }
   for (const g of s.guards) {
     if (!validRarity(g.rarity)) g.rarity = "common";
@@ -112,6 +127,7 @@ function repair(s: GameState): GameState | null {
   for (const o of s.offers ?? []) {
     if (!validRarity(o.prisoner.rarity)) o.prisoner.rarity = "common";
     scrubTrait(o.prisoner);
+    scrubRevealed(o.prisoner);
   }
   if (typeof s.crownDays !== "number" || Number.isNaN(s.crownDays)) s.crownDays = 0;
   if (typeof s.winterDaysLeft !== "number" || Number.isNaN(s.winterDaysLeft)) {

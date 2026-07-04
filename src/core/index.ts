@@ -20,7 +20,9 @@ export {
   projectDay,
   guardQuarters,
   summarize,
+  cellConflictChance,
 } from "./simulation";
+export { INTERVIEW_QUESTIONS, askQuestion, traitKnown } from "./interview";
 export { applyAction, costs, type ActionResult } from "./actions";
 export { resolveEvents, type EventResolution } from "./events";
 export {

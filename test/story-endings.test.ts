@@ -163,8 +163,12 @@ describe("victory & endings", () => {
 });
 
 function advanceDayUntilOver(s: GameState): void {
-  // Starve and freeze the keep so collapse is certain, not seed-lucky.
+  // Starve and freeze the keep so collapse is certain, not seed-lucky. Pin
+  // reputation below the death penalty each day so the first in-house death
+  // (starvation is guaranteed here) tips the keep into disgrace regardless of
+  // calm-day drift.
   for (let i = 0; i < 60 && !s.gameOver; i++) {
+    s.reputation = Math.min(s.reputation, 3);
     s.resources.food = 0;
     s.resources.firewood = 0;
     advanceDay(s);

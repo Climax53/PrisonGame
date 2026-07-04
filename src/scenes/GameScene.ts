@@ -39,6 +39,13 @@ import { Juice } from "../ui/fx";
 import { getSettings, updateSettings } from "../ui/settings";
 import { ACHIEVEMENTS, BANNER_COLORS, SIGILS, traitDef, wardenDef } from "../core";
 import {
+  askQuestion,
+  cellConflictChance,
+  INTERVIEW_QUESTIONS,
+  traitKnown,
+  type InterviewTopic,
+} from "../core";
+import {
   buildDecreeStrip,
   ftueActive,
   markDecree,
@@ -994,6 +1001,138 @@ export class GameScene extends Phaser.Scene {
   }
 
   /**
+   * INTAKE — the new arrival stands before you. Ask up to two questions from
+   * the preset list (each reveals temperament, working hands, or their past),
+   * then choose their cell — the grid warns when a neighbour spells trouble
+   * (cellConflictChance drives real night brawls in the core).
+   */
+  openIntakeSheet(p: Prisoner, fresh: boolean): void {
+    const layer = this.add.container(0, 0).setDepth(830);
+    const close = () => {
+      layer.destroy();
+      this.persist();
+      this.renderAll();
+    };
+    let answers: string[] = [];
+    const render = () => {
+      layer.removeAll(true);
+      layer.add(
+        this.add.rectangle(0, 0, VIEW.width, VIEW.height, COLORS.shadow, 0.9).setOrigin(0, 0).setInteractive(),
+      );
+      const w = VIEW.width - 64;
+      const h = Math.min(VIEW.height - 100, 760);
+      const py = (VIEW.height - h) / 2;
+      const panel = makePanel(this, 32, py, w, h, fresh ? "⛓  The New Arrival" : "🗣  The Interview Room");
+      const portrait = artImage(this, prisonerPortraitKey(p), 90, 110, 110, 110);
+      if (portrait) {
+        panel.add(portrait);
+        const frame = artImage(this, rarityFrameKey(p.rarity), 90, 110, 132, 132);
+        if (frame) panel.add(frame);
+      }
+      panel.add(
+        this.add.text(170, 56, p.name, {
+          fontFamily: FONT.display, fontSize: "28px",
+          color: COLORS.rarity[p.rarity] ?? COLORS.parchmentCss,
+        }),
+      );
+      panel.add(
+        this.add.text(170, 92, `${p.rarity} ${p.severity} · ${p.sentenceDays}d · pays ${p.dailyPayout}/day`, {
+          fontFamily: FONT.family, fontSize: "14px", color: COLORS.neutralCss,
+        }),
+      );
+      const asked = p.revealed ?? [];
+      panel.add(
+        this.add.text(20, 180, `Question them (${Math.max(0, 2 - asked.length)} left):`, {
+          fontFamily: FONT.medieval, fontSize: "18px", color: COLORS.goldCss,
+        }),
+      );
+      const topics = Object.keys(INTERVIEW_QUESTIONS) as InterviewTopic[];
+      topics.forEach((t, i) => {
+        const used = asked.includes(t);
+        const bw = (w - 40 - 16) / 3;
+        panel.add(
+          makeButton(this, {
+            x: 20 + i * (bw + 8), y: 208, width: bw, height: 44,
+            label: INTERVIEW_QUESTIONS[t].label, fontSize: 14,
+            fill: used ? COLORS.gold : COLORS.panelLight,
+            textColor: used ? COLORS.inkCss : COLORS.parchmentCss,
+            enabled: used || asked.length < 2,
+            onTap: () => {
+              const line = askQuestion(p, t);
+              if (!answers.includes(line)) answers.push(line);
+              this.persist();
+              render();
+            },
+          }),
+        );
+      });
+      answers.slice(-2).forEach((line, i) => {
+        panel.add(
+          this.add.text(20, 264 + i * 44, clip(`“${line}”`, 160), {
+            fontFamily: FONT.family, fontSize: "14px", color: COLORS.parchmentCss,
+            wordWrap: { width: w - 40 },
+          }),
+        );
+      });
+
+      // ── Choose the cell ──
+      panel.add(
+        this.add.text(20, 360, "Assign their cell (⚠ = a bad neighbour):", {
+          fontFamily: FONT.medieval, fontSize: "18px", color: COLORS.goldCss,
+        }),
+      );
+      const s = this.state;
+      const byCell = new Map<number, Prisoner>();
+      for (const q of s.prisoners) {
+        if (q.alive && q.id !== p.id && typeof q.cell === "number") byCell.set(q.cell, q);
+      }
+      const neighboursOf = (c: number): Prisoner[] => {
+        const ids = [c % 2 === 0 ? c + 1 : c - 1, c - 2, c + 2];
+        return ids.map((n) => byCell.get(n)).filter((q): q is Prisoner => !!q);
+      };
+      const cols = 5;
+      const bw = (w - 40 - (cols - 1) * 8) / cols;
+      for (let c = 0; c < s.cellCapacity; c++) {
+        const row = Math.floor(c / cols);
+        const bx = 20 + (c % cols) * (bw + 8);
+        const by = 392 + row * 52;
+        const occupant = byCell.get(c);
+        const risky = !occupant && neighboursOf(c).some((q) => cellConflictChance(p, q) >= 0.15);
+        panel.add(
+          makeButton(this, {
+            x: bx, y: by, width: bw, height: 44,
+            label: occupant ? "●" : `${c + 1}${risky ? " ⚠" : ""}${p.cell === c ? " ✓" : ""}`,
+            fontSize: 15,
+            fill: p.cell === c ? COLORS.gold : risky ? COLORS.blood : COLORS.panelLight,
+            textColor: p.cell === c ? COLORS.inkCss : COLORS.parchmentCss,
+            enabled: !occupant,
+            onTap: () => {
+              const res = applyAction(s, { type: "movePrisoner", prisonerId: p.id, cell: c });
+              if (!res.ok && res.error) this.toast(res.error, COLORS.badCss);
+              else if (risky) {
+                this.toast("They eye their new neighbour with open menace…", COLORS.badCss);
+              }
+              this.persist();
+              render();
+            },
+          }),
+        );
+      }
+      const gridBottom = 392 + Math.ceil(s.cellCapacity / cols) * 52;
+      panel.add(
+        makeButton(this, {
+          x: 20, y: Math.min(h - 66, gridBottom + 10), width: w - 40, height: 52,
+          label: fresh ? "⛓  Lock Them In" : "Done", fontSize: 19,
+          fill: COLORS.gold, textColor: COLORS.inkCss,
+          onTap: close,
+        }),
+      );
+      layer.add(panel);
+    };
+    render();
+  }
+
+  /**
    * The prisoner dossier — tap any inmate anywhere and their whole story
    * opens: portrait in rarity frame, temperament, sentence, earnings, and a
    * DIRECT labour picker (research: tap-anything inspection beats blind
@@ -1036,10 +1175,11 @@ export class GameScene extends Phaser.Scene {
         })
         .setOrigin(0.5, 0),
     );
-    const trait = traitDef(p.trait);
+    const known = traitKnown(p);
+    const trait = known ? traitDef(p.trait) : undefined;
     panel.add(
       this.add
-        .text(w / 2, 278, `${p.rarity} ${p.severity}${trait ? `  ·  ${trait.name}` : ""}`, {
+        .text(w / 2, 278, `${p.rarity} ${p.severity}  ·  ${known ? (trait ? trait.name : "even-tempered") : "temperament unknown"}`, {
           fontFamily: FONT.medieval,
           fontSize: "17px",
           color: COLORS.neutralCss,
@@ -1112,8 +1252,18 @@ export class GameScene extends Phaser.Scene {
 
     panel.add(
       makeButton(this, {
-        x: 28, y: h - 70, width: w - 56, height: 54,
-        label: "Close the Dossier", fontSize: 19,
+        x: 28, y: h - 70, width: (w - 68) / 2, height: 54,
+        label: "🗣 Interview / Move", fontSize: 16,
+        onTap: () => {
+          close();
+          this.openIntakeSheet(p, false);
+        },
+      }),
+    );
+    panel.add(
+      makeButton(this, {
+        x: 28 + (w - 68) / 2 + 12, y: h - 70, width: (w - 68) / 2, height: 54,
+        label: "Close", fontSize: 19,
         onTap: close,
       }),
     );
@@ -1742,7 +1892,12 @@ export class GameScene extends Phaser.Scene {
       this.playBurst("vfx_smoke_puff", VIEW.width / 2, VIEW.height / 2, 1.3);
     }
     // First Decrees hooks — the tutorial rewards REAL actions.
-    if (res.ok && action.type === "acceptOffer") this.decree("acceptPrisoner");
+    if (res.ok && action.type === "acceptOffer") {
+      this.decree("acceptPrisoner");
+      // Intake: question the new arrival, then choose their cell.
+      const newest = this.state.prisoners[this.state.prisoners.length - 1];
+      if (newest) this.openIntakeSheet(newest, true);
+    }
     if (res.ok && action.type === "buyResource") this.decree("buyProvisions");
     const coinDelta = Math.round(this.state.resources.coin - beforeCoin);
     if (coinDelta !== 0) {
