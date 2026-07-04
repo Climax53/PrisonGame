@@ -5,6 +5,7 @@
 import { BALANCE } from "./balance";
 import { randomGuardName, randomPrisonerName } from "./names";
 import { guardRarityMods, prisonerRarityMods, rollRarity } from "./rarity";
+import { TRAIT_IDS, traitDef } from "./traits";
 import { wardenMods } from "./wardens";
 import type { Rng } from "./rng";
 import type {
@@ -13,6 +14,7 @@ import type {
   IntakeOffer,
   Prisoner,
   Severity,
+  TraitId,
   WardenTier,
 } from "./types";
 
@@ -31,22 +33,29 @@ export function createPrisoner(
   const w = wardenMods(state);
   const rarity = rollRarity(rng, state.tier, w.rarityTierShift);
   const mods = prisonerRarityMods(rarity);
+  // Trait roll, immediately after rarity (draw order is load-bearing for
+  // determinism): one chance() draw decides traitless (45%); if not, one pick()
+  // draw selects uniformly from TRAIT_IDS.
+  const trait: TraitId | undefined = rng.chance(0.45) ? undefined : rng.pick(TRAIT_IDS);
   // Reputation scales payout from 80% (rep 0) to 130% (rep 100); rarity then
   // multiplies it — a rare inmate is worth far more to the crown. The warden's
-  // reputation for dealmaking (or lack of it) applies last.
+  // reputation for dealmaking (or lack of it) applies last, then the trait
+  // (a Silver-Tongue talks the crown into a fatter stipend).
   const repScale = 0.8 + (state.reputation / 100) * 0.5;
   return {
     id: mintId(state, "p"),
     name: randomPrisonerName(rng),
     severity,
     rarity,
+    trait,
     health: rng.int(70, 100),
     unrest: rng.int(5, 25),
     sentenceDays: rng.int(minS, maxS),
     daysHeld: 0,
     assignment: "none",
     dailyPayout: Math.round(
-      BALANCE.payout[severity] * repScale * mods.payoutMult * w.intakePayMult,
+      BALANCE.payout[severity] * repScale * mods.payoutMult * w.intakePayMult *
+        (traitDef(trait)?.payoutMult ?? 1),
     ),
     alive: true,
   };

@@ -31,13 +31,22 @@ import {
 } from "../core";
 import { runOnboarding } from "../ui/onboarding";
 import { runSetup, type SetupResult } from "../ui/setup";
-import { getProfile, hydrateProfile, recordProgress } from "../ui/profile";
+import { getProfile, grantDailyCrowns, hydrateProfile, recordProgress } from "../ui/profile";
 import { COLORS, DANGER_COLOR, FONT, VIEW } from "../ui/theme";
 import { makeBar, makeButton, makePanel } from "../ui/widgets";
 import { loadGameAsync, saveGame } from "../ui/save";
 import { Juice } from "../ui/fx";
 import { getSettings, updateSettings } from "../ui/settings";
-import { ACHIEVEMENTS, BANNER_COLORS, SIGILS, wardenDef } from "../core";
+import { ACHIEVEMENTS, BANNER_COLORS, SIGILS, traitDef, wardenDef } from "../core";
+import {
+  buildDecreeStrip,
+  ftueActive,
+  markDecree,
+  showAppointmentLetter,
+  type DecreeStep,
+} from "../ui/ftue";
+import { openStoreSheet } from "../ui/storeSheet";
+import { THEMES } from "../ui/store";
 import {
   artCover,
   artImage,
@@ -159,6 +168,12 @@ export class GameScene extends Phaser.Scene {
       loop: true,
       callback: () => this.updateClock(),
     });
+    // Ambient life: the cells murmur every so often.
+    this.time.addEvent({
+      delay: 13000,
+      loop: true,
+      callback: () => this.ambientMutter(),
+    });
     void this.bootstrap();
   }
 
@@ -168,10 +183,16 @@ export class GameScene extends Phaser.Scene {
     const s = this.state;
     if (!s || s.gameOver || s.pendingDecision || this.dayInFlight) return;
     if (s.hour >= BALANCE.time.dayEndHour) return;
+    const coinBefore = s.resources.coin;
     advanceHour(s);
     this.persist();
     this.displayed.coin = s.resources.coin;
     this.renderHud();
+    // The hour's earnings visibly drip in — the screen is never a still image.
+    const slice = s.resources.coin - coinBefore;
+    if (slice > 0.05 && !getSettings().reducedMotion) {
+      this.juice.floatNumber(this.coinChip.x + 24, this.coinChip.y + 18, `+${round1(slice)}`, COLORS.goldCss);
+    }
     if (s.hour >= BALANCE.time.dayEndHour) {
       // The bell has rung — swap the bottom bar to "Retire for the Night".
       this.renderContent();
@@ -258,6 +279,42 @@ export class GameScene extends Phaser.Scene {
     this.displayed = { coin: this.state.resources.coin, reputation: this.state.reputation };
     this.persist();
     this.renderAll();
+    // The first "win": the magistrate's letter names the player and pays a
+    // signing bonus (see docs/research/UI_DENSITY_DIRECTIVES.md §2).
+    showAppointmentLetter(this, this.state, () => {
+      this.persist();
+      this.renderAll();
+      this.juice.floatNumber(this.coinChip.x, this.coinChip.y, "+40", COLORS.goldCss);
+    });
+  }
+
+  /** The active keep theme (cosmetic DLC): postcard phase lock + accent. */
+  private activeTheme() {
+    return THEMES.find((t) => t.id === getProfile().activeTheme) ?? THEMES[0];
+  }
+
+  /** Open the Royal Mint (store) sheet. */
+  openStore(): void {
+    openStoreSheet(this, {
+      state: this.state,
+      onChanged: () => {
+        this.persist();
+        this.renderAll();
+      },
+      toast: (m, c) => this.toast(m, c),
+    });
+  }
+
+  /** FTUE hook: mark a decree done and pay its reward with fanfare. */
+  private decree(step: DecreeStep): void {
+    const reward = markDecree(step);
+    if (reward <= 0) return;
+    this.state.resources.coin += reward;
+    this.persist();
+    this.juice.celebrate();
+    this.juice.floatNumber(this.coinChip.x, this.coinChip.y, `+${reward}`, COLORS.goldCss);
+    this.toast(`Decree fulfilled! +${reward} coin`, COLORS.goldCss);
+    this.renderAll();
   }
 
   /** Evaluate achievements and toast anything newly earned. */
@@ -316,11 +373,11 @@ export class GameScene extends Phaser.Scene {
     if (sigilImg) this.hud.add(sigilImg);
     const title = this.add.text(
       sigilImg ? 50 : 16,
-      12,
+      8,
       `${sigilImg ? "" : `${s.heraldry?.sigil ?? "⚜"} `}${s.keepName || "Warden's Keep"}`,
       {
-        fontFamily: FONT.family,
-        fontSize: "24px",
+        fontFamily: FONT.display,
+        fontSize: "30px",
         color: `#${bannerColor.toString(16).padStart(6, "0")}`,
       },
     );
@@ -332,13 +389,26 @@ export class GameScene extends Phaser.Scene {
       }),
     );
     const tierLabel = this.add
-      .text(VIEW.width - 58, 16, `${tierTitle(s.tier)}  •  Day ${s.day}`, {
-        fontFamily: FONT.family,
-        fontSize: "20px",
+      .text(VIEW.width - 58, 10, `${tierTitle(s.tier)} · Day ${s.day}`, {
+        fontFamily: FONT.display,
+        fontSize: "24px",
         color: COLORS.parchmentCss,
       })
       .setOrigin(1, 0);
     this.hud.add([title, tierLabel]);
+
+    // Crowns purse — tap to open the Royal Mint.
+    const crowns = getProfile().crowns ?? 0;
+    const purse = this.add
+      .text(360, 40, `👑 ${crowns}`, {
+        fontFamily: FONT.medieval,
+        fontSize: "16px",
+        color: COLORS.goldCss,
+      })
+      .setOrigin(1, 0)
+      .setInteractive({ useHandCursor: true });
+    purse.on("pointerup", () => this.openStore());
+    this.hud.add(purse);
 
     // Active-condition badges: the clock first, then winter/victory countdowns.
     const evening = s.hour >= BALANCE.time.dayEndHour;
@@ -528,6 +598,15 @@ export class GameScene extends Phaser.Scene {
       this.renderGameOver();
       return;
     }
+    // The First Decrees strip claims a slim band under the tabs while active.
+    this.contentTop = 228;
+    if (ftueActive()) {
+      const strip = buildDecreeStrip(this, 228, () => this.renderContent());
+      if (strip) {
+        this.content.add(strip);
+        this.contentTop = 228 + 52;
+      }
+    }
     switch (this.activeTab) {
       case "keep":
         this.buildKeepTab();
@@ -547,6 +626,52 @@ export class GameScene extends Phaser.Scene {
 
   private contentTop = 228;
   private contentBottom = VIEW.height - 96;
+
+  /** Ambient life: a random inmate mutters now and then — a parchment bubble
+   * that drifts and fades. Pure presentation (UI-side randomness is fine). */
+  private ambientMutter(): void {
+    const s = this.state;
+    if (!s || s.gameOver || s.pendingDecision || getSettings().reducedMotion) return;
+    const living = s.prisoners.filter((p) => p.alive);
+    if (living.length === 0) return;
+    const p = living[Math.floor(Math.random() * living.length)];
+    const pool =
+      p.unrest > 60
+        ? ["They'll regret these bars…", "One spark. That's all it takes.", "I hear the yard whispering."]
+        : p.health < 40
+          ? ["Cough… the cold's in my chest.", "A crust of bread, warden?", "The straw is damp again."]
+          : ["Another day, another groat for the crown.", "The smith's fire keeps me warm at least.", "I dreamt of the open road.", "The warders cheat at dice."];
+    const text = `${p.name.split(" ")[0]}: “${pool[Math.floor(Math.random() * pool.length)]}”`;
+    const bx = 40 + Math.random() * (VIEW.width - 360);
+    const by = this.contentTop + 40 + Math.random() * 120;
+    const bubble = this.add
+      .text(bx, by, text, {
+        fontFamily: FONT.family,
+        fontSize: "13px",
+        color: COLORS.inkCss,
+        backgroundColor: "#e8d8b0",
+        padding: { x: 8, y: 5 },
+      })
+      .setAlpha(0)
+      .setDepth(700);
+    this.tweens.add({
+      targets: bubble,
+      alpha: 0.95,
+      y: by - 8,
+      duration: 350,
+      yoyo: false,
+      onComplete: () => {
+        this.tweens.add({
+          targets: bubble,
+          alpha: 0,
+          y: by - 26,
+          delay: 2600,
+          duration: 700,
+          onComplete: () => bubble.destroy(),
+        });
+      },
+    });
+  }
 
   private buildKeepTab(): void {
     const s = this.state;
@@ -569,7 +694,7 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.content.add(
-      this.add.text(16, stripBottom, "Tap a prisoner to cycle their labour assignment:", {
+      this.add.text(16, stripBottom, "Tap a prisoner for their dossier:", {
         fontFamily: FONT.family,
         fontSize: "16px",
         color: COLORS.neutralCss,
@@ -626,7 +751,10 @@ export class GameScene extends Phaser.Scene {
    */
   private buildKeepPostcard(y: number): number {
     const s = this.state;
-    const key = keepExteriorKey(s.tier, s.hour, s.winterDaysLeft > 0);
+    const theme = this.activeTheme();
+    const key = theme.phaseOverride
+      ? `ext_${s.tier}_${theme.phaseOverride}`
+      : keepExteriorKey(s.tier, s.hour, s.winterDaysLeft > 0);
     const w = VIEW.width - 32;
     const h = 158;
     const img = artCover(this, key, 16, y, w, h, 0.62);
@@ -677,7 +805,7 @@ export class GameScene extends Phaser.Scene {
       this.add
         .rectangle(16, y, w, h)
         .setOrigin(0, 0)
-        .setStrokeStyle(2, COLORS.gold, 0.6),
+        .setStrokeStyle(2, theme.accentColor ?? COLORS.gold, 0.7),
     );
     return y + h + 10;
   }
@@ -853,24 +981,148 @@ export class GameScene extends Phaser.Scene {
       .rectangle(0, 0, w, h, 0xffffff, 0.001)
       .setOrigin(0, 0)
       .setInteractive({ useHandCursor: true });
-    hit.on("pointerup", () => this.cycleLabor(p));
+    hit.on("pointerup", () => this.openPrisonerSheet(p));
     panel.add(hit);
     return panel;
   }
 
-  private cycleLabor(p: Prisoner): void {
-    const idx = LABOR_CYCLE.indexOf(p.assignment);
-    const next = LABOR_CYCLE[(idx + 1) % LABOR_CYCLE.length];
-    applyAction(this.state, { type: "assignLabor", prisonerId: p.id, assignment: next });
-    this.persist();
-    // Re-task changes the day's projected yield, so refresh the HUD forecast
-    // chips too — not just the prisoner card badge.
-    this.renderHud();
-    this.renderContent();
+  /**
+   * The prisoner dossier — tap any inmate anywhere and their whole story
+   * opens: portrait in rarity frame, temperament, sentence, earnings, and a
+   * DIRECT labour picker (research: tap-anything inspection beats blind
+   * cycling). Replaces the old tap-to-cycle interaction.
+   */
+  openPrisonerSheet(p: Prisoner): void {
+    const layer = this.add.container(0, 0).setDepth(820);
+    const close = () => {
+      layer.destroy();
+      this.renderHud();
+      this.renderContent();
+    };
+    const backdrop = this.add
+      .rectangle(0, 0, VIEW.width, VIEW.height, COLORS.shadow, 0.82)
+      .setOrigin(0, 0)
+      .setInteractive();
+    backdrop.on("pointerup", close); // tap outside to dismiss
+    layer.add(backdrop);
+
+    const w = VIEW.width - 72;
+    const h = 640;
+    const py = (VIEW.height - h) / 2;
+    const panel = makePanel(this, 36, py, w, h);
+    panel.add(
+      this.add.rectangle(0, 0, w, 4, COLORS.severity[p.severity] ?? COLORS.steel).setOrigin(0, 0),
+    );
+
+    const portrait = artImage(this, prisonerPortraitKey(p), w / 2, 118, 170, 170);
+    if (portrait) {
+      panel.add(portrait);
+      const frame = artImage(this, rarityFrameKey(p.rarity), w / 2, 118, 206, 206);
+      if (frame) panel.add(frame);
+    }
+    panel.add(
+      this.add
+        .text(w / 2, 232, p.name, {
+          fontFamily: FONT.display,
+          fontSize: "32px",
+          color: COLORS.rarity[p.rarity] ?? COLORS.parchmentCss,
+        })
+        .setOrigin(0.5, 0),
+    );
+    const trait = traitDef(p.trait);
+    panel.add(
+      this.add
+        .text(w / 2, 278, `${p.rarity} ${p.severity}${trait ? `  ·  ${trait.name}` : ""}`, {
+          fontFamily: FONT.medieval,
+          fontSize: "17px",
+          color: COLORS.neutralCss,
+        })
+        .setOrigin(0.5, 0),
+    );
+    if (trait) {
+      panel.add(
+        this.add
+          .text(w / 2, 302, trait.blurb, {
+            fontFamily: FONT.family,
+            fontSize: "13px",
+            color: COLORS.neutralCss,
+            align: "center",
+            wordWrap: { width: w - 60 },
+          })
+          .setOrigin(0.5, 0),
+      );
+    }
+
+    // The ledger row: what they pay, how long they stay, where they sleep.
+    panel.add(
+      this.add
+        .text(w / 2, 336, `🪙 ${p.dailyPayout}/day   ·   ${p.sentenceDays}d left   ·   ${cellName(p)}`, {
+          fontFamily: FONT.family,
+          fontSize: "16px",
+          color: COLORS.goldCss,
+        })
+        .setOrigin(0.5, 0),
+    );
+
+    // Vitals.
+    panel.add(this.add.text(28, 372, "Health", { fontFamily: FONT.family, fontSize: "14px", color: COLORS.neutralCss }));
+    panel.add(makeBar(this, 100, 374, w - 128, 14, p.health / 100, COLORS.good));
+    panel.add(this.add.text(28, 398, "Unrest", { fontFamily: FONT.family, fontSize: "14px", color: COLORS.neutralCss }));
+    panel.add(makeBar(this, 100, 400, w - 128, 14, p.unrest / 100, COLORS.bad));
+
+    // Direct labour picker — five stations, current one lit.
+    panel.add(
+      this.add.text(28, 432, "Assignment", {
+        fontFamily: FONT.medieval,
+        fontSize: "18px",
+        color: COLORS.goldCss,
+      }),
+    );
+    const bw = (w - 56 - 4 * 8) / 5;
+    LABOR_CYCLE.forEach((job, i) => {
+      const bx = 28 + i * (bw + 8);
+      const active = p.assignment === job;
+      panel.add(
+        makeButton(this, {
+          x: bx, y: 460, width: bw, height: 74,
+          label: `\n${job === "none" ? "rest" : job.slice(0, 8)}`,
+          fontSize: 12,
+          fontFamily: FONT.family,
+          fill: active ? COLORS.gold : COLORS.panelLight,
+          textColor: active ? COLORS.inkCss : COLORS.parchmentCss,
+          onTap: () => {
+            applyAction(this.state, { type: "assignLabor", prisonerId: p.id, assignment: job });
+            this.persist();
+            this.decree("assignLabour");
+            close();
+            this.openPrisonerSheet(p); // reopen refreshed — instant feedback
+          },
+        }),
+      );
+      const jobIcon = artImage(this, LABOR_ICON_KEY[job], bx + bw / 2, 484, 30, 30);
+      if (jobIcon) panel.add(jobIcon);
+    });
+
+    panel.add(
+      makeButton(this, {
+        x: 28, y: h - 70, width: w - 56, height: 54,
+        label: "Close the Dossier", fontSize: 19,
+        onTap: close,
+      }),
+    );
+    layer.add(panel);
+    if (!getSettings().reducedMotion) {
+      panel.setScale(0.94).setAlpha(0);
+      this.tweens.add({ targets: panel, scale: 1, alpha: 1, duration: 180, ease: "Back.easeOut" });
+    }
   }
 
-  /** The cell block: every cell drawn in place, its occupant named, tap to
-   * re-task them. Overflow inmates (beyond capacity) wait in the yard. */
+  /**
+   * THE CELL BLOCK — drawn as an actual jail: a torchlit central corridor,
+   * cells flanking it behind bars, warders on patrol, the hearth at the head.
+   * Tap an occupied cell to open the inmate's dossier. Overflow waits in the
+   * yard. (Research directive: "the scene IS the screen".)
+   */
   private buildCellsTab(): void {
     const s = this.state;
     const living = s.prisoners.filter((p) => p.alive);
@@ -880,123 +1132,207 @@ export class GameScene extends Phaser.Scene {
     }
 
     this.content.add(
-      this.add.text(16, this.contentTop, "The cell block — tap an inmate to change their labour.", {
-        fontFamily: FONT.family,
-        fontSize: "16px",
+      this.add.text(16, this.contentTop, "The cell block — tap an inmate for their dossier.", {
+        fontFamily: FONT.medieval,
+        fontSize: "17px",
         color: COLORS.neutralCss,
       }),
     );
 
     const cap = s.cellCapacity;
-    const cols = cap <= 9 ? 3 : 4;
-    const gap = 10;
-    const cellW = (VIEW.width - 32 - gap * (cols - 1)) / cols;
-    const rows = Math.ceil(cap / cols);
-    const gridTop = this.contentTop + 30;
+    const rows = Math.ceil(cap / 2);
+    const gridTop = this.contentTop + 28;
     const yard = living.filter((p) => typeof p.cell !== "number" || p.cell >= cap);
     const yardH = yard.length > 0 ? 64 : 0;
     const availH = this.contentBottom - gridTop - yardH - 8;
-    const cellH = Math.max(88, Math.min(150, Math.floor(availH / rows) - gap));
-
+    const gap = 6;
+    const cellH = Math.max(84, Math.min(136, Math.floor(availH / rows) - gap));
+    const BARS_W = 14;
+    const CORRIDOR_W = 92;
+    const cellW = (VIEW.width - 32 - CORRIDOR_W - 2 * BARS_W) / 2;
+    const corridorX = 16 + cellW + BARS_W;
+    const blockH = rows * (cellH + gap) - gap;
     const winter = s.winterDaysLeft > 0;
     const floorKeys = winter
       ? ["tile_snow_dusted_stone_floor"]
       : ["tile_stone_floor_plain", "tile_stone_floor_cracked", "tile_stone_floor_mossy"];
-    for (let i = 0; i < cap; i++) {
-      const x = 16 + (i % cols) * (cellW + gap);
-      const y = gridTop + Math.floor(i / cols) * (cellH + gap);
-      const p = byCell.get(i);
-      const panel = makePanel(this, x, y, cellW, cellH);
 
-      // Stone-floor backdrop (painted tile), darkened for text contrast.
+    // ── The corridor: worn stone, the hearth at its head, warders walking. ──
+    // One continuous slice of worn stone (cover-cropped, no tiling) — any
+    // repeating pattern down the shaft reads as a ladder, caught twice in
+    // visual review.
+    const corridorArt = artCover(this, "tile_stone_floor_mossy", corridorX, gridTop, CORRIDOR_W, blockH, 0.5);
+    if (corridorArt) {
+      corridorArt.setTint(0x9f9f9f);
+      this.content.add(corridorArt);
+    } else {
+      this.content.add(
+        this.add.rectangle(corridorX, gridTop, CORRIDOR_W, blockH, COLORS.panelLight).setOrigin(0, 0),
+      );
+    }
+    // Soft edge shadows ground the walkway between the cell walls.
+    this.content.add(
+      this.add.rectangle(corridorX, gridTop, 6, blockH, COLORS.shadow, 0.45).setOrigin(0, 0),
+    );
+    this.content.add(
+      this.add.rectangle(corridorX + CORRIDOR_W - 6, gridTop, 6, blockH, COLORS.shadow, 0.45).setOrigin(0, 0),
+    );
+    if (this.anims.exists("vfx_torch_flame") && !getSettings().reducedMotion) {
+      const torch = this.add
+        .sprite(corridorX + CORRIDOR_W / 2, gridTop + 22, "vfx_torch_flame")
+        .setScale(0.34);
+      torch.play("vfx_torch_flame");
+      this.content.add(torch);
+    }
+    // Patrolling warders — the corps, visibly on duty.
+    const patrols = Math.min(3, s.guards.length);
+    for (let g = 0; g < patrols; g++) {
+      const guard = this.add
+        .text(corridorX + 18 + g * 26, gridTop + 70, "⚔", {
+          fontFamily: FONT.family,
+          fontSize: "22px",
+          color: COLORS.steelCss,
+        })
+        .setOrigin(0.5, 0.5);
+      this.content.add(guard);
+      if (!getSettings().reducedMotion && blockH > 160) {
+        this.tweens.add({
+          targets: guard,
+          y: gridTop + blockH - 40,
+          duration: 6000 + g * 1700,
+          delay: g * 900,
+          yoyo: true,
+          repeat: -1,
+          ease: "Sine.easeInOut",
+        });
+      }
+    }
+    if (s.guards.length === 0) {
+      this.content.add(
+        this.add
+          .text(corridorX + CORRIDOR_W / 2, gridTop + 70, "no\nwatch!", {
+            fontFamily: FONT.family,
+            fontSize: "13px",
+            color: COLORS.badCss,
+            align: "center",
+          })
+          .setOrigin(0.5, 0),
+      );
+    }
+
+    // ── The cells, flanking the corridor behind bars. ──
+    for (let i = 0; i < cap; i++) {
+      const row = Math.floor(i / 2);
+      const leftSide = i % 2 === 0;
+      const x = leftSide ? 16 : corridorX + CORRIDOR_W + BARS_W;
+      const y = gridTop + row * (cellH + gap);
+      const barsX = leftSide ? 16 + cellW : corridorX + CORRIDOR_W;
+      const p = byCell.get(i);
+
+      // Cell interior: stone floor (dim when empty), straw for the occupied.
       const floorKey = floorKeys[i % floorKeys.length];
-      if (p && hasArt(this, floorKey)) {
+      if (hasArt(this, floorKey)) {
         const floor = this.add
-          .image(2, 2, floorKey)
+          .image(x, y, floorKey)
           .setOrigin(0, 0)
-          .setDisplaySize(cellW - 4, cellH - 4)
-          .setTint(0x8a8a8a);
-        panel.add(floor);
-        panel.add(
-          this.add.rectangle(2, 2, cellW - 4, cellH - 4, COLORS.shadow, 0.28).setOrigin(0, 0),
+          .setDisplaySize(cellW, cellH)
+          .setTint(p ? 0x9a9a9a : 0x565656);
+        this.content.add(floor);
+      } else {
+        this.content.add(
+          this.add.rectangle(x, y, cellW, cellH, p ? COLORS.panel : COLORS.shadow).setOrigin(0, 0),
         );
-      } else if (!p && hasArt(this, "tile_cell_bars_door_open")) {
-        // An empty cell: the door stands open, waiting.
-        const bars = this.add
-          .image(2, 2, "tile_cell_bars_door_open")
+      }
+      if (p && hasArt(this, "tile_straw_bedding")) {
+        const straw = this.add
+          .image(leftSide ? x + 6 : x + cellW - 40, y + cellH - 40, "tile_straw_bedding")
           .setOrigin(0, 0)
-          .setDisplaySize(cellW - 4, cellH - 4)
-          .setAlpha(0.5)
-          .setTint(0x777777);
-        panel.add(bars);
+          .setDisplaySize(34, 34)
+          .setAlpha(0.9);
+        this.content.add(straw);
       }
 
-      panel.add(
-        this.add.text(8, 6, `Cell ${i + 1}`, {
-          fontFamily: FONT.family,
-          fontSize: "12px",
-          color: COLORS.parchmentCss,
-        }).setShadow(1, 1, "#000000", 2),
+      // The cell's corridor wall: solid dark stone with a barred GATE in the
+      // middle — a doorway, not a full-height rail (full-height light strips
+      // read as ladder rails down the shaft; caught in visual review).
+      this.content.add(
+        this.add.rectangle(barsX, y, BARS_W, cellH, 0x1c1712, 1).setOrigin(0, 0),
       );
-      if (p) {
-        const sev = COLORS.severity[p.severity] ?? COLORS.steel;
-        panel.add(this.add.rectangle(4, 26, 6, cellH - 34, sev).setOrigin(0, 0));
+      const gateH = Math.min(40, Math.round(cellH * 0.42));
+      const gateY = y + Math.round((cellH - gateH) / 2);
+      this.content.add(
+        this.add.rectangle(barsX, gateY, BARS_W, gateH, COLORS.panelLight, p ? 0.9 : 0.45).setOrigin(0, 0),
+      );
+      for (const bx of [3, 7, 11]) {
+        this.content.add(
+          this.add.rectangle(barsX + bx, gateY + 1, 2, gateH - 2, COLORS.shadow, 0.95).setOrigin(0, 0),
+        );
+      }
 
-        // Portrait in its rarity frame, centered in the cell.
-        const px = cellW / 2;
-        const py = Math.min(cellH / 2 - 8, 24 + (cellH - 74) / 2);
-        const portrait = artImage(this, prisonerPortraitKey(p), px, py, 58, 58);
+      this.content.add(
+        this.add
+          .text(leftSide ? x + 6 : x + cellW - 6, y + 4, `${i + 1}`, {
+            fontFamily: FONT.display,
+            fontSize: "18px",
+            color: COLORS.neutralCss,
+          })
+          .setOrigin(leftSide ? 0 : 1, 0)
+          .setAlpha(0.85),
+      );
+
+      if (p) {
+        const px = x + cellW / 2;
+        const py = y + Math.min(cellH / 2 - 6, 40);
+        const portrait = artImage(this, prisonerPortraitKey(p), px, py, 56, 56);
         if (portrait) {
-          panel.add(portrait);
-          const frame = artImage(this, rarityFrameKey(p.rarity), px, py, 72, 72);
-          if (frame) panel.add(frame);
+          this.content.add(portrait);
+          const frame = artImage(this, rarityFrameKey(p.rarity), px, py, 70, 70);
+          if (frame) this.content.add(frame);
         }
-        panel.add(
+        this.content.add(
           this.add
-            .text(px, cellH - 40, clip(p.name, Math.floor((cellW - 16) / 8)), {
+            .text(px, y + cellH - 26, clip(p.name, Math.floor((cellW - 12) / 8)), {
               fontFamily: FONT.family,
-              fontSize: "14px",
+              fontSize: "13px",
               color: COLORS.rarity[p.rarity] ?? COLORS.parchmentCss,
             })
             .setOrigin(0.5, 0)
             .setShadow(1, 1, "#000000", 2),
         );
-        const laborIcon = artImage(this, LABOR_ICON_KEY[p.assignment], px - 34, cellH - 14, 20, 20);
-        if (laborIcon) panel.add(laborIcon);
-        panel.add(
+        const jobIcon = artImage(this, LABOR_ICON_KEY[p.assignment], px - 26, y + cellH - 4 - 8, 16, 16);
+        if (jobIcon) this.content.add(jobIcon);
+        this.content.add(
           this.add
-            .text(laborIcon ? px - 20 : px, cellH - 22, laborIcon ? p.assignment : `${LABOR_ICON[p.assignment]} ${p.assignment}`, {
+            .text(jobIcon ? px - 16 : px, y + cellH - 14, p.assignment === "none" ? "resting" : p.assignment, {
               fontFamily: FONT.family,
-              fontSize: "12px",
+              fontSize: "10px",
               color: COLORS.goldCss,
             })
-            .setOrigin(laborIcon ? 0 : 0.5, 0)
+            .setOrigin(jobIcon ? 0 : 0.5, 0.5)
             .setShadow(1, 1, "#000000", 2),
         );
         const hit = this.add
-          .rectangle(0, 0, cellW, cellH, 0xffffff, 0.001)
+          .rectangle(x, y, cellW + BARS_W, cellH, 0xffffff, 0.001)
           .setOrigin(0, 0)
           .setInteractive({ useHandCursor: true });
-        hit.on("pointerup", () => this.cycleLabor(p));
-        panel.add(hit);
+        hit.on("pointerup", () => this.openPrisonerSheet(p));
+        this.content.add(hit);
       } else {
-        panel.add(
+        this.content.add(
           this.add
-            .text(cellW / 2, cellH - 22, "— empty —", {
+            .text(x + cellW / 2, y + cellH / 2, "empty", {
               fontFamily: FONT.family,
-              fontSize: "13px",
+              fontSize: "12px",
               color: COLORS.neutralCss,
             })
             .setOrigin(0.5, 0.5)
-            .setAlpha(0.8)
-            .setShadow(1, 1, "#000000", 2),
+            .setAlpha(0.6),
         );
       }
-      this.content.add(panel);
     }
 
     if (yard.length > 0) {
-      const yardY = gridTop + rows * (cellH + gap);
+      const yardY = gridTop + blockH + 8;
       const panel = makePanel(this, 16, yardY, VIEW.width - 32, 56, "⚠ The Yard (over capacity)");
       panel.add(
         this.add.text(12, 32, clip(yard.map((p) => p.name).join(", "), 74), {
@@ -1270,19 +1606,29 @@ export class GameScene extends Phaser.Scene {
 
   private renderEndDayBar(): void {
     const evening = this.state.hour >= BALANCE.time.dayEndHour;
-    this.content.add(
-      makeButton(this, {
-        x: 16,
-        y: VIEW.height - 84,
-        width: VIEW.width - 32,
-        height: 68,
-        label: evening ? "🌙  Retire for the Night" : "⏩  Skip to Evening",
-        fontSize: 26,
-        fill: evening ? COLORS.moss : COLORS.panelLight,
-        textColor: evening ? COLORS.inkCss : COLORS.parchmentCss,
-        onTap: () => (evening ? this.endDay() : this.skipToEvening()),
-      }),
-    );
+    const bar = makeButton(this, {
+      x: 16,
+      y: VIEW.height - 84,
+      width: VIEW.width - 32,
+      height: 68,
+      label: evening ? "🌙  Retire for the Night" : "⏩  Skip to Evening",
+      fontSize: 26,
+      fill: evening ? COLORS.moss : COLORS.panelLight,
+      textColor: evening ? COLORS.inkCss : COLORS.parchmentCss,
+      onTap: () => (evening ? this.endDay() : this.skipToEvening()),
+    });
+    this.content.add(bar);
+    // At the bell, the button breathes — the eye is drawn to the one action left.
+    if (evening && !getSettings().reducedMotion) {
+      this.tweens.add({
+        targets: bar,
+        alpha: { from: 1, to: 0.75 },
+        duration: 900,
+        yoyo: true,
+        repeat: -1,
+        ease: "Sine.easeInOut",
+      });
+    }
   }
 
   /** Fast-forward the remaining daylight (income and labour accrue in full) —
@@ -1299,6 +1645,7 @@ export class GameScene extends Phaser.Scene {
       this.juice.floatNumber(this.coinChip.x, this.coinChip.y, `+${delta}`, COLORS.goldCss);
     }
     this.displayed.coin = s.resources.coin;
+    this.decree("skipToEvening");
   }
 
   private endDay(): void {
@@ -1314,6 +1661,7 @@ export class GameScene extends Phaser.Scene {
       this.animateReputationFrom = beforeRep;
       this.displayed.reputation = this.state.reputation;
       this.renderAll();
+      this.decree("retire");
       // The tick has landed — safe to accept the next End Day. The feedback
       // below is fire-and-forget visuals only.
       this.dayInFlight = false;
@@ -1376,6 +1724,9 @@ export class GameScene extends Phaser.Scene {
     if (res.ok && action.type === "build") {
       this.playBurst("vfx_smoke_puff", VIEW.width / 2, VIEW.height / 2, 1.3);
     }
+    // First Decrees hooks — the tutorial rewards REAL actions.
+    if (res.ok && action.type === "acceptOffer") this.decree("acceptPrisoner");
+    if (res.ok && action.type === "buyResource") this.decree("buyProvisions");
     const coinDelta = Math.round(this.state.resources.coin - beforeCoin);
     if (coinDelta !== 0) {
       this.juice.floatNumber(
@@ -1460,8 +1811,19 @@ export class GameScene extends Phaser.Scene {
 
       panel.add(
         makeButton(this, {
-          x: 16, y: bottomY + 32, width: (w - 44) / 2, height: 52,
-          label: "⚜ A New Reign", fontSize: 17,
+          x: 16, y: bottomY + 32, width: w - 32, height: 50,
+          label: `\u{1F451}  The Royal Mint  (${getProfile().crowns ?? 0} crowns)`, fontSize: 17,
+          fill: COLORS.panelLight,
+          onTap: () => {
+            layer.destroy();
+            this.openStore();
+          },
+        }),
+      );
+      panel.add(
+        makeButton(this, {
+          x: 16, y: bottomY + 94, width: (w - 44) / 2, height: 52,
+          label: "\u269c A New Reign", fontSize: 17,
           fill: COLORS.blood,
           onTap: () => {
             layer.destroy();
@@ -1471,7 +1833,7 @@ export class GameScene extends Phaser.Scene {
       );
       panel.add(
         makeButton(this, {
-          x: 16 + (w - 44) / 2 + 12, y: bottomY + 32, width: (w - 44) / 2, height: 52,
+          x: 16 + (w - 44) / 2 + 12, y: bottomY + 94, width: (w - 44) / 2, height: 52,
           label: "Close", fontSize: 17,
           onTap: close,
         }),
@@ -1625,6 +1987,11 @@ export class GameScene extends Phaser.Scene {
     const s = this.state;
     const ending = endingFor(s);
     const accent = ending.won ? COLORS.goldCss : COLORS.badCss;
+    // A finished daily challenge pays its crown bounty (idempotent per date).
+    if (s.dailyChallenge) {
+      const paid = grantDailyCrowns(s.dailyChallenge);
+      if (paid > 0) this.toast(`\u{1F4C5} Daily challenge complete \u2014 +${paid} \u{1F451}`, COLORS.goldCss);
+    }
 
     this.content.add(
       this.add.rectangle(0, 0, VIEW.width, VIEW.height, COLORS.shadow, 0.92).setOrigin(0, 0),

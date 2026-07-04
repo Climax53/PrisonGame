@@ -18,24 +18,19 @@ interface Step {
   highlight?: { x: number; y: number; w: number; h: number };
 }
 
+// Research: interactive learn-by-doing beats tooltip lectures (see
+// docs/research/UI_DENSITY_DIRECTIVES.md §2). The tour is now THREE panels —
+// the real teaching happens through the First Decrees checklist (ui/ftue.ts).
 const STEPS: Step[] = [
   {
     text: "⚜ Welcome, Warden.\n\nThe crown pays you to hold its prisoners — every day, per head. Keep them alive, keep them quiet, and your name will rise from village gaoler to Keeper of the Crown.",
   },
   {
-    text: "Your stores. 🪙 Coin pays wages and buys supplies. 🍖 Food and 🪵 firewood are eaten daily — run short and the cells starve or freeze. 🪣 Buckets keep sickness at bay.",
+    text: "Your stores, and tomorrow's ledger beneath each one. 🪙 Coin pays wages. 🍖 Food and 🪵 firewood are eaten daily. 🪣 Buckets keep sickness at bay. Below: tomorrow's dangers — a warning, not a promise.",
     highlight: { x: 0, y: 50, w: VIEW.width, h: 60 },
   },
   {
-    text: "Your conscience and your warnings. The ⚖ bar tracks what kind of warden you're becoming — cruelty and mercy each carry their own price. Below it, tomorrow's dangers: a warning, not a promise.",
-    highlight: { x: 12, y: 224, w: VIEW.width - 24, h: 142 },
-  },
-  {
-    text: "📜 Offers: the crown sends prisoners; you choose whom to hold. Rarer inmates pay far more — and are far more trouble. 🔒 Cells shows who sleeps where. ⚒ Market: stores, warders, buildings.",
-    highlight: { x: 0, y: 156, w: VIEW.width, h: 58 },
-  },
-  {
-    text: "The sun crosses on its own — coin and labour trickle in each hour until the 9 o'clock bell, when the keep can do no more. Then Retire for the Night: pay, hunger, schemes — and sometimes a choice only you can make.\n\nHold the crown's trust for 30 days at the highest tier to win your place in history.",
+    text: "The sun crosses on its own — coin trickles in each hour until the 9 o'clock bell. Then Retire for the Night and face what the dark brings.\n\nYour First Decrees await below the tabs: do them, and be paid.\n\nHold the crown's trust for 30 days at the highest tier to win your place in history.",
     highlight: { x: 16, y: VIEW.height - 84, w: VIEW.width - 32, h: 68 },
   },
 ];

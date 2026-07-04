@@ -58,7 +58,7 @@ describe("advanceDay", () => {
   it("generates fresh intake offers each day", () => {
     const s = createInitialState(1);
     advanceDay(s);
-    expect(s.offers.length).toBe(BALANCE.intake.offersPerDay);
+    expect(s.offers.length).toBe(BALANCE.intake.offersByTier[s.tier]);
     expect(s.offers.every((o) => o.dailyPayout > 0)).toBe(true);
   });
 

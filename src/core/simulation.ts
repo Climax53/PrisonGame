@@ -22,6 +22,7 @@ import {
   unrestDrift,
 } from "./morality";
 import { prisonerRarityMods, rarityRank } from "./rarity";
+import { traitDef } from "./traits";
 import { checkVictory } from "./endings";
 import { dueLegendBeat, maybeBrandLegend } from "./legends";
 import { wardenMods } from "./wardens";
@@ -66,6 +67,7 @@ function hourlyLaborOutput(state: GameState): Partial<Record<"coin" | "food" | "
       (job.yield / BALANCE.time.hoursPerDay) *
       efficiency *
       prisonerRarityMods(p.rarity).laborMult *
+      (traitDef(p.trait)?.laborMult ?? 1) *
       moraleMult;
     out[job.resource] = (out[job.resource] ?? 0) + produced;
   }
@@ -250,6 +252,13 @@ function updateUnrest(state: GameState): void {
     delta += overcrowd * 1.5; // crowded cells simmer
     delta -= suppression;
     delta += moraleDrift;
+    // Temperament: the Brawler stews, the Penitent prays; the Gaol-Lunged and
+    // Iron-Backed pay their nightly toll in flesh.
+    const t = traitDef(p.trait);
+    if (t) {
+      delta += t.unrestPerDay;
+      if (t.healthPerDay !== 0) p.health = clamp(p.health + t.healthPerDay, 0, 100);
+    }
     p.unrest = clamp(p.unrest + delta, 0, 100);
   }
 
@@ -346,7 +355,8 @@ function releaseServed(state: GameState): number {
 function generateOffers(state: GameState, rng: Rng): void {
   state.offers = [];
   const pool = BALANCE.tierIntake[state.tier];
-  for (let i = 0; i < BALANCE.intake.offersPerDay; i++) {
+  // Standing at court widens the docket: higher tiers see more offers per day.
+  for (let i = 0; i < BALANCE.intake.offersByTier[state.tier]; i++) {
     const severity = (rng.pick(pool) ?? "petty") as Severity;
     const offer = createOffer(state, rng, severity);
     // A legendary/mythic political or noble arrival may be a named LEGEND with
@@ -495,7 +505,11 @@ export function projectDay(state: GameState): {
     const job = BALANCE.labor[p.assignment];
     const efficiency = 0.5 + (p.health / 100) * 0.5;
     production[job.resource] +=
-      job.yield * efficiency * prisonerRarityMods(p.rarity).laborMult * moraleMult;
+      job.yield *
+      efficiency *
+      prisonerRarityMods(p.rarity).laborMult *
+      (traitDef(p.trait)?.laborMult ?? 1) *
+      moraleMult;
   }
   const living = livingPrisoners(state);
   const wages = state.guards.reduce((s, g) => s + g.wage, 0);

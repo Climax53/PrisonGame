@@ -89,6 +89,10 @@ export const BALANCE = {
     amnesty: { baseChance: 0.02 },
     bard: { baseChance: 0.04 },
     ratPlague: { baseChance: 0.04 },
+    friar: { baseChance: 0.03 },
+    /** The crown audits fat purses (fires only when coin > 300). */
+    audit: { baseChance: 0.03 },
+    shivFound: { baseChance: 0.04 },
     /** Chance per day that one eligible story decision fires (if no other decision claimed the day). */
     storyDecision: { baseChance: 0.14 },
   },
@@ -152,8 +156,16 @@ export const BALANCE = {
   } as Record<WardenTier, Severity[]>,
 
   intake: {
-    /** Max pending offers generated per day. */
+    /** Max pending offers generated per day (legacy flat value; the simulation
+     * now reads offersByTier — kept for older callers/UI copy). */
     offersPerDay: 2,
+    /** Offers on the docket each day, by tier — the crown trusts you with more. */
+    offersByTier: {
+      village: 3,
+      town: 4,
+      city: 4,
+      crown: 5,
+    } as Record<WardenTier, number>,
     /** Signing bounty as a multiple of daily payout. */
     bountyMultiplier: 1.5,
   },
