@@ -389,7 +389,7 @@ export class GameScene extends Phaser.Scene {
       }),
     );
     const tierLabel = this.add
-      .text(VIEW.width - 58, 10, `${tierTitle(s.tier)} · Day ${s.day}`, {
+      .text(VIEW.width - 160, 10, `${tierTitle(s.tier)} · Day ${s.day}`, {
         fontFamily: FONT.display,
         fontSize: "24px",
         color: COLORS.parchmentCss,
@@ -397,18 +397,16 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(1, 0);
     this.hud.add([title, tierLabel]);
 
-    // Crowns purse — tap to open the Royal Mint.
+    // Crowns purse — a real button beside the gear; opens the Royal Mint.
     const crowns = getProfile().crowns ?? 0;
-    const purse = this.add
-      .text(360, 40, `👑 ${crowns}`, {
-        fontFamily: FONT.medieval,
-        fontSize: "16px",
-        color: COLORS.goldCss,
-      })
-      .setOrigin(1, 0)
-      .setInteractive({ useHandCursor: true });
-    purse.on("pointerup", () => this.openStore());
-    this.hud.add(purse);
+    this.hud.add(
+      makeButton(this, {
+        x: VIEW.width - 148, y: 8, width: 92, height: 40,
+        label: `👑 ${crowns}`, fontSize: 18,
+        fill: COLORS.panelLight,
+        onTap: () => this.openStore(),
+      }),
+    );
 
     // Active-condition badges: the clock first, then winter/victory countdowns.
     const evening = s.hour >= BALANCE.time.dayEndHour;
@@ -420,7 +418,7 @@ export class GameScene extends Phaser.Scene {
     if (badges.length > 0) {
       this.hud.add(
         this.add
-          .text(VIEW.width - 58, 40, badges.join("   "), {
+          .text(VIEW.width - 160, 40, badges.join("   "), {
             fontFamily: FONT.family,
             fontSize: "14px",
             color: COLORS.goldCss,
@@ -466,9 +464,9 @@ export class GameScene extends Phaser.Scene {
         this.hud.add(icon);
         this.hud.add(
           this.add
-            .text(cx - 26, 58, val, {
+            .text(cx - 26, 56, val, {
               fontFamily: FONT.family,
-              fontSize: "22px",
+              fontSize: "24px",
               color,
             })
             .setOrigin(0, 0),
@@ -490,7 +488,7 @@ export class GameScene extends Phaser.Scene {
           this.add
             .text(cx, 84, `${d > 0 ? "+" : ""}${d}/d`, {
               fontFamily: FONT.family,
-              fontSize: "13px",
+              fontSize: "14px",
               color: d > 0 ? COLORS.goodCss : d < 0 ? COLORS.badCss : COLORS.neutralCss,
             })
             .setOrigin(0.5, 0),
@@ -632,6 +630,15 @@ export class GameScene extends Phaser.Scene {
   private ambientMutter(): void {
     const s = this.state;
     if (!s || s.gameOver || s.pendingDecision || getSettings().reducedMotion) return;
+    // Only where prisoners are on screen, and never over an open sheet.
+    if (this.activeTab !== "keep" && this.activeTab !== "cells") return;
+    const overlayDepths = new Set([820, 845, 850, 860, 870, 880]);
+    const overlayOpen = this.children.list.some(
+      (c) =>
+        overlayDepths.has((c as Phaser.GameObjects.Container).depth) &&
+        (c as Phaser.GameObjects.Container).length > 0,
+    );
+    if (overlayOpen) return;
     const living = s.prisoners.filter((p) => p.alive);
     if (living.length === 0) return;
     const p = living[Math.floor(Math.random() * living.length)];
@@ -695,8 +702,8 @@ export class GameScene extends Phaser.Scene {
 
     this.content.add(
       this.add.text(16, stripBottom, "Tap a prisoner for their dossier:", {
-        fontFamily: FONT.family,
-        fontSize: "16px",
+        fontFamily: FONT.medieval,
+        fontSize: "19px",
         color: COLORS.neutralCss,
       }),
     );
@@ -884,7 +891,7 @@ export class GameScene extends Phaser.Scene {
       const dIcon = artImage(this, iconKey, cxi + 10, 92, 20, 20);
       if (dIcon) panel.add(dIcon);
       panel.add(
-        this.add.text(dIcon ? cxi + 24 : cxi, 86, label, { fontFamily: FONT.family, fontSize: "13px", color: COLORS.parchmentCss }),
+        this.add.text(dIcon ? cxi + 24 : cxi, 84, label, { fontFamily: FONT.family, fontSize: "15px", color: COLORS.parchmentCss }),
       );
       panel.add(this.add.rectangle(cxi, 104, trackW, 12, COLORS.shadow).setOrigin(0, 0));
       panel.add(
@@ -931,9 +938,9 @@ export class GameScene extends Phaser.Scene {
     }
 
     panel.add(
-      this.add.text(textX, 8, `${p.name}`, {
-        fontFamily: FONT.family,
-        fontSize: "19px",
+      this.add.text(textX, 6, `${p.name}`, {
+        fontFamily: FONT.medieval,
+        fontSize: "21px",
         // Name tinted by rarity — the notoriety of the inmate at a glance.
         color: COLORS.rarity[p.rarity] ?? COLORS.parchmentCss,
       }),
@@ -941,7 +948,7 @@ export class GameScene extends Phaser.Scene {
     panel.add(
       this.add.text(textX, 32, `◆ ${p.rarity}  •  ${p.severity}  •  ${p.sentenceDays}d left  •  ${cellName(p)}`, {
         fontFamily: FONT.family,
-        fontSize: "13px",
+        fontSize: "14px",
         color: COLORS.neutralCss,
       }),
     );
@@ -953,14 +960,14 @@ export class GameScene extends Phaser.Scene {
     panel.add(makeBar(this, textX + 200, 56, 100, 12, p.unrest / 100, COLORS.bad));
 
     // Labour badge (the whole card is tappable to cycle it).
-    const laborIcon = artImage(this, LABOR_ICON_KEY[p.assignment], w - 30, h / 2 - 12, 30, 30);
+    const laborIcon = artImage(this, LABOR_ICON_KEY[p.assignment], w - 52, h / 2 - 14, 30, 30);
     if (laborIcon) {
       panel.add(laborIcon);
       panel.add(
         this.add
-          .text(w - 30, h / 2 + 16, p.assignment, {
+          .text(w - 52, h / 2 + 16, p.assignment === "none" ? "resting" : p.assignment, {
             fontFamily: FONT.family,
-            fontSize: "13px",
+            fontSize: "12px",
             color: COLORS.goldCss,
           })
           .setOrigin(0.5, 0.5),
@@ -1184,27 +1191,37 @@ export class GameScene extends Phaser.Scene {
       torch.play("vfx_torch_flame");
       this.content.add(torch);
     }
-    // Patrolling warders — the corps, visibly on duty.
+    // Patrolling guards — the artist's own figures walking the corridor
+    // (down-facing frames on the way down, tabard-back frames on the way up).
     const patrols = Math.min(3, s.guards.length);
     for (let g = 0; g < patrols; g++) {
-      const guard = this.add
-        .text(corridorX + 18 + g * 26, gridTop + 70, "⚔", {
-          fontFamily: FONT.family,
-          fontSize: "22px",
-          color: COLORS.steelCss,
-        })
-        .setOrigin(0.5, 0.5);
-      this.content.add(guard);
-      if (!getSettings().reducedMotion && blockH > 160) {
-        this.tweens.add({
-          targets: guard,
-          y: gridTop + blockH - 40,
-          duration: 6000 + g * 1700,
-          delay: g * 900,
-          yoyo: true,
-          repeat: -1,
-          ease: "Sine.easeInOut",
-        });
+      const gx = corridorX + CORRIDOR_W / 2 + (g - 1) * 24;
+      if (this.anims.exists("guard_walk_down")) {
+        const spr = this.add.sprite(gx, gridTop + 60 + g * 30, "sprite_guard").setScale(0.44);
+        spr.play("guard_walk_down");
+        this.content.add(spr);
+        if (!getSettings().reducedMotion && blockH > 200) {
+          this.tweens.add({
+            targets: spr,
+            y: gridTop + blockH - 50,
+            duration: 9000 + g * 2300,
+            delay: g * 1300,
+            yoyo: true,
+            repeat: -1,
+            ease: "Linear",
+            onYoyo: () => spr.play("guard_walk_up"),
+            onRepeat: () => spr.play("guard_walk_down"),
+          });
+        }
+      } else {
+        const mark = this.add
+          .text(gx, gridTop + 70, "⚔", {
+            fontFamily: FONT.family,
+            fontSize: "22px",
+            color: COLORS.steelCss,
+          })
+          .setOrigin(0.5, 0.5);
+        this.content.add(mark);
       }
     }
     if (s.guards.length === 0) {
@@ -1480,7 +1497,7 @@ export class GameScene extends Phaser.Scene {
       panel.add(
         makeButton(this, {
           x: 16, y: 11, width: bw, height: 48,
-          label: `Hire Warder  ${hireCost}🪙`, fontSize: 16,
+          label: `Hire Guard  ${hireCost}🪙`, fontSize: 16,
           enabled: s.resources.coin >= hireCost,
           onTap: () => this.doAction({ type: "hireGuard" }, "market"),
         }),
@@ -1503,8 +1520,8 @@ export class GameScene extends Phaser.Scene {
       ["chapel", "⛪ Chapel", "icon_chapel", "calms the cells daily"],
       ["gallows", "🪢 Gallows", "icon_noose", "fear: quiet cells, fewer escapes — hardens your soul"],
       ["walls", "🧱 High Walls", "icon_wall", "halves escape attempts"],
-      ["barracks", "🛏 Barracks", "", `bunks for ${BALANCE.buildings.barracks.quarters} more warders — crowding sours the corps`],
-      ["tavern", "🍺 Tavern", "icon_dice", "ale and dice each evening lift the warders' spirits"],
+      ["barracks", "🛏 Barracks", "", `bunks for ${BALANCE.buildings.barracks.quarters} more guards — crowding sours the corps`],
+      ["tavern", "🍺 Tavern", "icon_dice", "ale and dice each evening lift the guards' spirits"],
     ];
     for (const [id, label, iconKey, hint] of BUILDING_ROWS) {
       const built = s.buildings[id];
@@ -1544,7 +1561,7 @@ export class GameScene extends Phaser.Scene {
     const bunks = guardQuarters(s);
     const panel = makePanel(
       this, 16, y + 4, w, Math.max(70, rosterH),
-      `Warders (${s.guards.length})  •  🛏 ${s.guards.length}/${bunks} bunks`,
+      `Guards (${s.guards.length})  •  🛏 ${s.guards.length}/${bunks} bunks`,
     );
     shown.forEach((g, i) => {
       const rowY = 36 + i * 32;
@@ -1587,16 +1604,16 @@ export class GameScene extends Phaser.Scene {
   private buildLogPanel(y: number): void {
     const h = Math.max(80, this.contentBottom - y - 4);
     const panel = makePanel(this, 16, y, VIEW.width - 32, h, "Chronicle");
-    const recent = this.state.log.slice(-Math.floor((h - 32) / 20));
+    const recent = this.state.log.slice(-Math.floor((h - 36) / 24));
     recent.forEach((entry, i) => {
       const color =
         entry.tone === "good" ? COLORS.goodCss : entry.tone === "bad" ? COLORS.badCss : COLORS.neutralCss;
       // One entry, one line: clip instead of wrapping, so rows can never
       // overlap the fixed 20px line pitch below the prisoner cards.
       panel.add(
-        this.add.text(12, 32 + i * 20, clip(`d${entry.day}: ${entry.text}`, 78), {
+        this.add.text(12, 36 + i * 24, clip(`d${entry.day}: ${entry.text}`, 66), {
           fontFamily: FONT.family,
-          fontSize: "13px",
+          fontSize: "15px",
           color,
         }),
       );

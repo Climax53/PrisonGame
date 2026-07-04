@@ -21,7 +21,7 @@ interface Step {
 // Research: interactive learn-by-doing beats tooltip lectures (see
 // docs/research/UI_DENSITY_DIRECTIVES.md §2). The tour is now THREE panels —
 // the real teaching happens through the First Decrees checklist (ui/ftue.ts).
-const STEPS: Step[] = [
+const getSteps = (): Step[] => [
   {
     text: "⚜ Welcome, Warden.\n\nThe crown pays you to hold its prisoners — every day, per head. Keep them alive, keep them quiet, and your name will rise from village gaoler to Keeper of the Crown.",
   },
@@ -48,7 +48,8 @@ export function runOnboarding(scene: Phaser.Scene, onDone: () => void): void {
 
   const render = () => {
     layer.removeAll(true);
-    const s = STEPS[step];
+    const steps = getSteps();
+    const s = steps[step];
 
     // Input-blocking dim.
     layer.add(
@@ -87,13 +88,13 @@ export function runOnboarding(scene: Phaser.Scene, onDone: () => void): void {
     layer.add(
       makeButton(scene, {
         x: 32 + cardW - 150, y: cardY + cardH - 60, width: 134, height: 46,
-        label: step === STEPS.length - 1 ? "Begin" : "Next ›",
+        label: step === steps.length - 1 ? "Begin" : "Next ›",
         fontSize: 19,
         fill: COLORS.gold,
         textColor: COLORS.inkCss,
         onTap: () => {
           step += 1;
-          if (step >= STEPS.length) finish();
+          if (step >= steps.length) finish();
           else render();
         },
       }),
@@ -109,7 +110,7 @@ export function runOnboarding(scene: Phaser.Scene, onDone: () => void): void {
     );
     layer.add(
       scene.add
-        .text(VIEW.width / 2, cardY + cardH - 90, `${step + 1} / ${STEPS.length}`, {
+        .text(VIEW.width / 2, cardY + cardH - 90, `${step + 1} / ${steps.length}`, {
           fontFamily: FONT.family,
           fontSize: "13px",
           color: COLORS.neutralCss,

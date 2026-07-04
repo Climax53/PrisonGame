@@ -97,7 +97,7 @@ const deposedPrince: LegendDef = {
       build: (s, p) => ({
         kind: "legend",
         day: s.day,
-        prompt: `A warder finds a rope of knotted linens and a copied key in Prince Alaric's cell. The escape is set for tonight.`,
+        prompt: `A guard finds a rope of knotted linens and a copied key in Prince Alaric's cell. The escape is set for tonight.`,
         options: [
           { id: "foil", label: "Spring the trap", hint: "Catch him in the act — hard on him, safe for you." },
           { id: "watch", label: "Double the watch quietly", hint: "Deter it without a scene." },
@@ -110,7 +110,7 @@ const deposedPrince: LegendDef = {
           p.health = clamp(p.health - rng.int(10, 20), 1, 100);
           p.unrest = clamp(p.unrest - 25, 0, 100);
           rep(s, 4);
-          const m = "The warders take Alaric at the wall's foot, rope in hand. Broken pride keeps a man quieter than chains.";
+          const m = "The guards take Alaric at the wall's foot, rope in hand. Broken pride keeps a man quieter than chains.";
           pushLog(s, m, "good");
           return { ok: true, message: m, tone: "good" };
         }
@@ -127,7 +127,7 @@ const deposedPrince: LegendDef = {
           p.alive = false;
           s.stats.totalEscapes += 1;
           rep(s, -12);
-          const m = "By dawn, Alaric's cell holds only a folded blanket and a polite note. The magistrate is apoplectic.";
+          const m = "By dawn, Alaric's cell holds only a folded blanket and a polite note. The magistrate is beside himself with rage.";
           pushLog(s, m, "bad");
           return { ok: true, message: m, tone: "bad" };
         }
@@ -224,7 +224,7 @@ const alchemist: LegendDef = {
       build: (s, p) => ({
         kind: "legend",
         day: s.day,
-        prompt: `A BANG from the cells — Mirabel stands in a ring of soot, delighted. "Progress!" The warders are less delighted.`,
+        prompt: `A BANG from the cells — Mirabel stands in a ring of soot, delighted. "Progress!" The guards are less delighted.`,
         options: [
           { id: "confiscate", label: "Confiscate everything", hint: "Safety first. She will sulk magnificently." },
           { id: "tolerate", label: "Let her continue — supervised", hint: "Genius is worth some scorch marks. Probably." },
@@ -314,7 +314,7 @@ const bishop: LegendDef = {
           }
           adjustMorality(s, 3);
           rep(s, -2);
-          const m = "The yard fills with rough voices finding harmony. Even the warders stand easier — though word will reach court.";
+          const m = "The yard fills with rough voices finding harmony. Even the guards stand easier — though word will reach court.";
           pushLog(s, m, "good");
           return { ok: true, message: m, tone: "good" };
         }
@@ -376,7 +376,7 @@ const bishop: LegendDef = {
         prompt: `His sentence near its end, Bishop Odo offers to consecrate the keep's yard: "Whatever you are, warden, this place could stand a blessing."`,
         options: [
           { id: "accept", label: "Accept the blessing", hint: "The cells take heart. The crown rolls its eyes." },
-          { id: "decline", label: "Decline politely", hint: "A keep runs on locks, not liturgy." },
+          { id: "decline", label: "Decline politely", hint: "A keep runs on locks, not prayers." },
         ],
         context: { legendId: "bishop", targetId: p.id },
       }),

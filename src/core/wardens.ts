@@ -87,7 +87,7 @@ export const WARDENS: WardenDef[] = [
     name: "The Veteran",
     epithet: "old soldier, older scars",
     blurb: "The garrison respects you; the treasury less so.",
-    effects: "+1 free starting warder, warders cost 20% less — intake pays 10% less.",
+    effects: "+1 free starting guard, guards cost 20% less — intake pays 10% less.",
     unlockedBy: "longReign",
     mods: { startBonusGuards: 1, wageMult: 0.8, intakePayMult: 0.9 },
     glyph: "🛡",

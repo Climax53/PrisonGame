@@ -80,7 +80,7 @@ export function artCover(
   return img;
 }
 
-/** Register the sliced VFX animations once (idempotent). */
+/** Register the sliced VFX + character animations once (idempotent). */
 export function ensureAnims(scene: Phaser.Scene): void {
   const defs: Array<[string, number, number]> = [
     // key, frameRate, repeat (-1 loops)
@@ -97,6 +97,24 @@ export function ensureAnims(scene: Phaser.Scene): void {
       frames: scene.anims.generateFrameNumbers(key, { start: 0, end: e.frames - 1 }),
       frameRate,
       repeat,
+    });
+  }
+  // Character walk cycles — frame indices chosen by visual inspection of the
+  // sliced body-sheets (guards: 0-1 face the viewer, 4-5 walk away bearing
+  // the banner tabard; prisoners: 4-5 shuffle, 13-14 dig).
+  const marches: Array<[string, string, number[], number]> = [
+    ["guard_walk_down", "sprite_guard", [0, 1], 4],
+    ["guard_walk_up", "sprite_guard", [4, 5], 4],
+    ["prisoner_shuffle", "sprite_prisoner", [4, 5], 3],
+    ["prisoner_dig", "sprite_prisoner", [13, 14], 3],
+  ];
+  for (const [key, sheet, frames, frameRate] of marches) {
+    if (!ART[sheet]?.frames || !scene.textures.exists(sheet) || scene.anims.exists(key)) continue;
+    scene.anims.create({
+      key,
+      frames: frames.map((f) => ({ key: sheet, frame: f })),
+      frameRate,
+      repeat: -1,
     });
   }
 }

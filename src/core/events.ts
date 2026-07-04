@@ -154,7 +154,7 @@ export function resolveEvents(state: GameState, rng: Rng): EventResolution {
       events.push({
         kind: "escape",
         day: state.day,
-        message: `${escapee.name} bolts for the gate — the warders drag them back.`,
+        message: `${escapee.name} bolts for the gate — the guards drag them back.`,
         deaths: 0,
         reputationDelta: 0,
         coinDelta: 0,

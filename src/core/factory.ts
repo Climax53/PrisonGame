@@ -31,6 +31,11 @@ export function createPrisoner(
 ): Prisoner {
   const [minS, maxS] = BALANCE.sentence[severity];
   const w = wardenMods(state);
+  // Mint the id FIRST: the UI picks the portrait's gender from id parity
+  // (src/ui/art.ts prisonerPortraitKey), so the name pool must follow the same
+  // parsing — even id → male, odd id → female.
+  const id = mintId(state, "p");
+  const male = (parseInt(id.split("_")[1] ?? "0", 10) || 0) % 2 === 0;
   const rarity = rollRarity(rng, state.tier, w.rarityTierShift);
   const mods = prisonerRarityMods(rarity);
   // Trait roll, immediately after rarity (draw order is load-bearing for
@@ -43,8 +48,8 @@ export function createPrisoner(
   // (a Silver-Tongue talks the crown into a fatter stipend).
   const repScale = 0.8 + (state.reputation / 100) * 0.5;
   return {
-    id: mintId(state, "p"),
-    name: randomPrisonerName(rng),
+    id,
+    name: randomPrisonerName(rng, male),
     severity,
     rarity,
     trait,
@@ -53,6 +58,8 @@ export function createPrisoner(
     sentenceDays: rng.int(minS, maxS),
     daysHeld: 0,
     assignment: "none",
+    // Fresh inmates arrive as strangers — the interview reveals them.
+    revealed: [],
     dailyPayout: Math.round(
       BALANCE.payout[severity] * repScale * mods.payoutMult * w.intakePayMult *
         (traitDef(trait)?.payoutMult ?? 1),

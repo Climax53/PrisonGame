@@ -123,6 +123,8 @@ export const ART: Record<string, ArtEntry> = {
   "sigil_5": {"file": "sigil_5.webp","w": 96,"h": 96},
   "sigil_6": {"file": "sigil_6.webp","w": 96,"h": 96},
   "sigil_7": {"file": "sigil_7.webp","w": 96,"h": 96},
+  "sprite_guard": {"file": "sprite_guard.webp","w": 4004,"h": 120,"frames": 22,"fw": 182,"fh": 120},
+  "sprite_prisoner": {"file": "sprite_prisoner.webp","w": 4959,"h": 120,"frames": 29,"fw": 171,"fh": 120},
   "tile_cell_bars_door_open": {"file": "tile_cell_bars_door_open.webp","w": 256,"h": 256},
   "tile_cell_bars_front": {"file": "tile_cell_bars_front.webp","w": 256,"h": 256},
   "tile_hearth_lit": {"file": "tile_hearth_lit.webp","w": 256,"h": 256},

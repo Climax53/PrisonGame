@@ -99,7 +99,7 @@ const plagueDoctor: StoryCard = {
     if (optionId === "pay") return treat(0.75, Math.min(fee, Math.max(0, s.resources.coin)));
     if (optionId === "haggle") {
       if (rng.chance(0.5)) return treat(0.75, Math.min(Math.floor(fee / 2), Math.max(0, s.resources.coin)));
-      const msg = "Insulted, the doctor departs in a swirl of camphor and contempt.";
+      const msg = "Insulted, the doctor departs in a swirl of strange smells and contempt.";
       pushLog(s, msg, "neutral");
       return { ok: true, message: msg, tone: "neutral" };
     }
@@ -121,7 +121,7 @@ const ringleader: StoryCard = {
     return {
       kind: "ringleader",
       day: s.day,
-      prompt: `The warders drag ${target.name} before you — caught whispering mutiny through the bars. The cells hold their breath.`,
+      prompt: `The guards drag ${target.name} before you — caught whispering mutiny through the bars. The cells hold their breath.`,
       options: [
         { id: "execute", label: "The gallows", hint: "Fear silences the cells. A death on your name." },
         { id: "solitary", label: "The dark cell", hint: "Break their spirit, harm their health. No blood." },
@@ -237,9 +237,9 @@ const smuggler: StoryCard = {
     return {
       kind: "smuggler",
       day: s.day,
-      prompt: `${guard.name} is caught smuggling wine and letters to the inmates for coin. The other warders await your judgment.`,
+      prompt: `${guard.name} is caught smuggling wine and letters to the inmates for coin. The other guards await your judgment.`,
       options: [
-        { id: "dismiss", label: "Dismiss them", hint: "Clean hands, one fewer warder." },
+        { id: "dismiss", label: "Dismiss them", hint: "Clean hands, one fewer guard." },
         { id: "flog", label: "Flog & keep them", hint: "Cruel discipline. The corps learns fear." },
         { id: "blackmail", label: "Take a cut", hint: "The smuggling continues — profitably. Risky." },
       ],
@@ -266,7 +266,7 @@ const smuggler: StoryCard = {
       g.fatigue = clamp(g.fatigue + 30, 0, 100);
       g.brutality = clamp(g.brutality + 10, 0, 100);
       adjustMorality(s, -4);
-      const msg = `${name} is flogged before the assembled warders. Lesson delivered — in the cruelest tongue.`;
+      const msg = `${name} is flogged before the assembled guards. Lesson delivered — in the cruelest tongue.`;
       pushLog(s, msg, "bad");
       return { ok: true, message: msg, tone: "bad" };
     }
@@ -354,7 +354,7 @@ const starvingVillage: StoryCard = {
       kind: "starvingVillage",
       day: s.day,
       prompt:
-        "A deputation of gaunt villagers stands at the gate. The harvest failed; they beg a share of the keep's stores.",
+        "A crowd of gaunt villagers stands at the gate. The harvest failed; they beg a share of the keep's stores.",
       options: [
         { id: "share", label: `Give ${share} food`, hint: "The town will love you. Your stores shrink." },
         { id: "sell", label: "Sell at double price", hint: "Profit from hunger. They will remember." },
@@ -466,7 +466,7 @@ const informant: StoryCard = {
       prompt:
         "A twitchy inmate sidles up to the bars: for a little coin, they'll name the men stoking tomorrow's trouble.",
       options: [
-        { id: "pay", label: `Pay ${fee} coin`, hint: "Names mean the warders can smother the plot." },
+        { id: "pay", label: `Pay ${fee} coin`, hint: "Names mean the guards can smother the plot." },
         { id: "threaten", label: "Threaten it out of them", hint: "Free — if fear works. It may backfire." },
         { id: "ignore", label: "Ignore the weasel", hint: "Maybe it's nothing. Maybe it isn't." },
       ],
@@ -484,7 +484,7 @@ const informant: StoryCard = {
     };
     if (optionId === "pay") {
       s.resources.coin -= Math.min(fee, Math.max(0, s.resources.coin));
-      return smother("Names in hand, the warders quietly separate the plotters. The pressure eases.", "good");
+      return smother("Names in hand, the guards quietly separate the plotters. The pressure eases.", "good");
     }
     if (optionId === "threaten") {
       adjustMorality(s, -2);
@@ -513,7 +513,7 @@ const witchTrial: StoryCard = {
     return {
       kind: "witchTrial",
       day: s.day,
-      prompt: `A torch-lit mob gathers at the gate, howling that ${target.name} is a witch and demanding the pyre. The warders bar the door and wait on your word.`,
+      prompt: `A torch-lit mob gathers at the gate, howling that ${target.name} is a witch and demanding the pyre. The guards bar the door and wait on your word.`,
       options: [
         { id: "handOver", label: "Hand them over", hint: "The mob loves you for it. A murder on your soul." },
         { id: "defy", label: "Defy the mob", hint: "Conscience kept; the town sours and the cells stir." },
@@ -693,7 +693,7 @@ const harvestFestival: StoryCard = {
         pushLog(s, msg, "bad");
         return { ok: true, message: msg, tone: "bad" };
       }
-      const msg = "The inmates dance, badly and joyfully, ringed by warders. Every soul returns — lighter than it left.";
+      const msg = "The inmates dance, badly and joyfully, ringed by guards. Every soul returns — lighter than it left.";
       pushLog(s, msg, "good");
       return { ok: true, message: msg, tone: "good" };
     }
