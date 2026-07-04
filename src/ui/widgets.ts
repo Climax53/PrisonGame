@@ -41,7 +41,7 @@ export function makeButton(
     .text(opts.width / 2, height / 2, opts.label, {
       // Buttons speak in the medieval face; callers can override for stat text.
       fontFamily: opts.fontFamily ?? FONT.medieval,
-      fontSize: `${opts.fontSize ?? 22}px`,
+      fontSize: `${opts.fontSize ?? 26}px`,
       color: opts.textColor ?? COLORS.parchmentCss,
       align: "center",
       wordWrap: { width: opts.width - 16 },
@@ -129,10 +129,10 @@ export function makePanel(
   const parts: Phaser.GameObjects.GameObject[] = [bg];
   if (title) {
     parts.push(
-      scene.add.text(12, 6, title, {
+      scene.add.text(14, 6, title, {
         // Panel titles carry the big medieval display face.
         fontFamily: FONT.display,
-        fontSize: "24px",
+        fontSize: "30px",
         color: COLORS.goldCss,
       }),
     );
