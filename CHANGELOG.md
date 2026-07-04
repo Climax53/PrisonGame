@@ -1,5 +1,52 @@
 # Changelog
 
+## Unreleased — "The Painted Keep" cycle (art round 1 integrated)
+
+### Added
+- **The commissioned art set is live.** 225 artist masters (assets/art/)
+  processed into 131 game-ready WebP assets (public/art, 4.2 MB total) by a
+  new pipeline (`scripts/process-art.py`) that reconstructs true alpha from
+  the delivered checkerboard backgrounds (border flood-fill + checker-parity
+  pattern matching), crops, resizes, compresses, and generates a typed
+  manifest (`src/ui/artManifest.ts`). Loaded by a themed preloader with a
+  progress bar; every art lookup degrades gracefully to the original emoji
+  placeholder if a file is missing.
+- **The living keep postcard**: your keep painted at your tier (village
+  lock-up → town gaol → city castellany → crown keep), the light changing
+  with the live clock (day → dusk → night-torchlit) and snow settling over
+  it in winter (additive drifting-snow overlay + animated torch sconces
+  after dusk).
+- **Portraits everywhere**: 8 prisoner bases (severity × gender, chosen
+  stably per inmate) inside 6 rarity frames (common→mythic) on Keep cards,
+  Offers dispatches, and the Cells tab; 7 warden portraits in the setup
+  carousel; 3 legend portraits fronting their story beats; supporting-cast
+  and pip art staged for future scenes.
+- **Cinematic decision banners**: all 10 decision kinds (riot, bribe, the 8
+  story cards) open under their own painted banner; each kind now also has
+  its own headline (was riot/bribe-only). Legends show their portrait.
+- **Painted endings**: all 6 endings (4 victories + disgraced + debtor's
+  walk) crown the reign summary with their vignette.
+- **Icon set**: resources, forecast chips, tabs, danger bars, morality
+  scales, labour assignments, buildings, settings gear — 44 painted icons
+  replacing emoji throughout the HUD, Market, and cards.
+- **Cells tab dressed**: stone-floor tile backdrops (plain/cracked/mossy,
+  snow-dusted in winter), open-door bars for empty cells, framed portraits
+  for occupants.
+- **VFX**: fire-burst on fire events, coin sparkles on gains, smoke puff on
+  construction, looping torch flames — sliced from the delivered strips into
+  spritesheets by the pipeline (frame detection via alpha projection).
+- **Identity**: carved-stone logo wordmark + key-art backdrop on the setup
+  sheet; painted heraldry sigils (8, matching the SIGILS order) in the
+  picker and HUD; the painted app icon is now the favicon/apple-touch-icon.
+- Renderer switched to linear filtering (`antialias: true`) — correct for
+  painterly downscaled art; smoke suite grown to 37 assertions (art
+  textures, VFX anims).
+- **`docs/ART_ROUND2_REQUESTS.md`**: the precise re-commission list — the
+  few assets that could not be used as delivered (accessory overlays and
+  body sheets need template alignment / uniform grids; nothing was
+  force-fitted) plus newly discovered gaps (guard portraits, barracks
+  icon, morale faces, empty-state art).
+
 ## Unreleased — "The Living Day" cycle (playtest rounds 1–2)
 
 ### Added (round 2)
