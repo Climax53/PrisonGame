@@ -37,7 +37,21 @@ import { makeBar, makeButton, makePanel } from "../ui/widgets";
 import { loadGameAsync, saveGame } from "../ui/save";
 import { Juice } from "../ui/fx";
 import { getSettings, updateSettings } from "../ui/settings";
-import { ACHIEVEMENTS, BANNER_COLORS, wardenDef } from "../core";
+import { ACHIEVEMENTS, BANNER_COLORS, SIGILS, wardenDef } from "../core";
+import {
+  artCover,
+  artImage,
+  decisionBannerKey,
+  DECISION_TITLE,
+  ensureAnims,
+  hasArt,
+  keepExteriorKey,
+  LABOR_ICON_KEY,
+  prisonerPortraitKey,
+  queueArt,
+  rarityFrameKey,
+  rarityPipKey,
+} from "../ui/art";
 
 /** A resource/reputation snapshot used to animate deltas between renders. */
 interface Vitals {
@@ -96,12 +110,40 @@ export class GameScene extends Phaser.Scene {
     super("GameScene");
   }
 
+  /** Load the full art set with a themed progress bar. Failures degrade to
+   * the emoji placeholders — the game never blocks on a missing file. */
+  preload(): void {
+    const cx = VIEW.width / 2;
+    const cy = VIEW.height / 2;
+    const label = this.add
+      .text(cx, cy - 40, "Raising the keep…", {
+        fontFamily: FONT.family,
+        fontSize: "22px",
+        color: COLORS.goldCss,
+      })
+      .setOrigin(0.5);
+    const track = this.add.rectangle(cx, cy, 420, 16, COLORS.shadow).setOrigin(0.5);
+    const fill = this.add
+      .rectangle(cx - 208, cy, 1, 12, COLORS.gold)
+      .setOrigin(0, 0.5);
+    this.load.on("progress", (p: number) => {
+      fill.width = Math.max(1, 416 * p);
+    });
+    this.load.once("complete", () => {
+      label.destroy();
+      track.destroy();
+      fill.destroy();
+    });
+    queueArt(this);
+  }
+
   create(): void {
     this.cameras.main.setBackgroundColor(COLORS.bgCss);
     this.hud = this.add.container(0, 0);
     this.content = this.add.container(0, 0);
     this.modalLayer = this.add.container(0, 0).setDepth(800);
     this.juice = new Juice(this);
+    ensureAnims(this);
     // The living clock: an in-game hour passes on its own every HOUR_REAL_MS —
     // the player never has to advance it. Coin and labour drip in hourly; at
     // the evening bell progress stops until the player retires for the night.
@@ -267,11 +309,21 @@ export class GameScene extends Phaser.Scene {
     this.hud.add(banner);
 
     const bannerColor = BANNER_COLORS[s.heraldry?.color ?? 0] ?? COLORS.gold;
-    const title = this.add.text(16, 12, `${s.heraldry?.sigil ?? "⚜"} ${s.keepName || "Warden's Keep"}`, {
-      fontFamily: FONT.family,
-      fontSize: "24px",
-      color: `#${bannerColor.toString(16).padStart(6, "0")}`,
-    });
+    // Heraldry sigil: painted icon when the art is loaded, emoji otherwise.
+    const sigilIdx = SIGILS.indexOf((s.heraldry?.sigil ?? "🗝") as (typeof SIGILS)[number]);
+    const sigilImg =
+      sigilIdx >= 0 ? artImage(this, `sigil_${sigilIdx}`, 30, 26, 30, 30) : null;
+    if (sigilImg) this.hud.add(sigilImg);
+    const title = this.add.text(
+      sigilImg ? 50 : 16,
+      12,
+      `${sigilImg ? "" : `${s.heraldry?.sigil ?? "⚜"} `}${s.keepName || "Warden's Keep"}`,
+      {
+        fontFamily: FONT.family,
+        fontSize: "24px",
+        color: `#${bannerColor.toString(16).padStart(6, "0")}`,
+      },
+    );
     this.hud.add(
       this.add.text(18, 40, `${s.wardenName} — ${wardenDef(s.warden).name}${s.dailyChallenge ? "  •  📅 daily" : ""}`, {
         fontFamily: FONT.family,
@@ -308,41 +360,60 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Settings gear — opens the settings/achievements sheet.
+    const gearArt = hasArt(this, "icon_gear");
     this.hud.add(
       makeButton(this, {
         x: VIEW.width - 48,
         y: 8,
         width: 40,
         height: 40,
-        label: "⚙",
+        label: gearArt ? "" : "⚙",
         fontSize: 22,
         fill: COLORS.panelLight,
         onTap: () => this.openSettings(),
       }),
     );
+    if (gearArt) {
+      const g = artImage(this, "icon_gear", VIEW.width - 28, 28, 26, 26);
+      if (g) this.hud.add(g);
+    }
 
     // Resource row, each with tomorrow-you's expected daily movement beneath —
     // the honest ledger (events excluded; the danger bars cover those).
     const fc = projectDay(s);
-    const chips: Array<[string, string, string, number | null]> = [
-      ["🪙", `${Math.round(r.coin)}`, COLORS.goldCss, fc.coin],
-      ["🍖", `${round1(r.food)}`, COLORS.parchmentCss, fc.food],
-      ["🪵", `${round1(r.firewood)}`, COLORS.parchmentCss, fc.firewood],
-      ["🪣", `${round1(r.buckets)}`, COLORS.parchmentCss, fc.buckets],
-      ["👤", `${sum.living}/${s.cellCapacity}`, COLORS.parchmentCss, null],
+    const chips: Array<[string, string, string, string, number | null]> = [
+      ["🪙", "icon_coin", `${Math.round(r.coin)}`, COLORS.goldCss, fc.coin],
+      ["🍖", "icon_food_bread_meat", `${round1(r.food)}`, COLORS.parchmentCss, fc.food],
+      ["🪵", "icon_firewood", `${round1(r.firewood)}`, COLORS.parchmentCss, fc.firewood],
+      ["🪣", "icon_bucket", `${round1(r.buckets)}`, COLORS.parchmentCss, fc.buckets],
+      ["👤", "icon_population", `${sum.living}/${s.cellCapacity}`, COLORS.parchmentCss, null],
     ];
     const chipW = VIEW.width / chips.length;
-    chips.forEach(([icon, val, color, delta], i) => {
+    chips.forEach(([emoji, artKey, val, color, delta], i) => {
       const cx = i * chipW + chipW / 2;
-      this.hud.add(
-        this.add
-          .text(cx, 58, `${icon}${val}`, {
-            fontFamily: FONT.family,
-            fontSize: "22px",
-            color,
-          })
-          .setOrigin(0.5, 0),
-      );
+      const icon = artImage(this, artKey, cx - 46, 71, 32, 32);
+      if (icon) {
+        this.hud.add(icon);
+        this.hud.add(
+          this.add
+            .text(cx - 26, 58, val, {
+              fontFamily: FONT.family,
+              fontSize: "22px",
+              color,
+            })
+            .setOrigin(0, 0),
+        );
+      } else {
+        this.hud.add(
+          this.add
+            .text(cx, 58, `${emoji}${val}`, {
+              fontFamily: FONT.family,
+              fontSize: "22px",
+              color,
+            })
+            .setOrigin(0.5, 0),
+        );
+      }
       if (delta !== null) {
         const d = Math.round(delta * 10) / 10;
         this.hud.add(
@@ -408,25 +479,28 @@ export class GameScene extends Phaser.Scene {
       .setOrigin(0, 0);
     this.hud.add(this.sunFill);
 
-    // Tab bar.
-    const tabs: Array<[Tab, string]> = [
-      ["keep", "🏰 Keep"],
-      ["cells", "🔒 Cells"],
-      ["offers", `📜 Offers (${s.offers.length})`],
-      ["market", "⚒ Market"],
+    // Tab bar — painted icons beside the labels when the art is loaded.
+    const tabs: Array<[Tab, string, string, string]> = [
+      ["keep", "🏰", "icon_keep_tower", "Keep"],
+      ["cells", "🔒", "icon_lock", "Cells"],
+      ["offers", "📜", "icon_scroll_offers", `Offers (${s.offers.length})`],
+      ["market", "⚒", "icon_anvil_market", "Market"],
     ];
     const tabW = VIEW.width / tabs.length;
-    tabs.forEach(([tab, label], i) => {
+    tabs.forEach(([tab, emoji, artKey, label], i) => {
+      const active = this.activeTab === tab;
+      const withArt = hasArt(this, artKey);
       this.hud.add(
         makeButton(this, {
           x: i * tabW,
           y: 156,
           width: tabW,
           height: 56,
-          label,
-          fontSize: 18,
-          fill: this.activeTab === tab ? COLORS.gold : COLORS.panelLight,
-          textColor: this.activeTab === tab ? COLORS.inkCss : COLORS.parchmentCss,
+          // Icon image replaces the emoji; nudge the text right to make room.
+          label: withArt ? `     ${label}` : `${emoji} ${label}`,
+          fontSize: 17,
+          fill: active ? COLORS.gold : COLORS.panelLight,
+          textColor: active ? COLORS.inkCss : COLORS.parchmentCss,
           onTap: () => {
             if (this.activeTab === tab) return;
             this.activeTab = tab;
@@ -435,6 +509,12 @@ export class GameScene extends Phaser.Scene {
           },
         }),
       );
+      if (withArt) {
+        const approxTextW = label.length * 10.2 + 50;
+        const iconX = i * tabW + tabW / 2 - approxTextW / 2 + 14;
+        const icon = artImage(this, artKey, iconX, 156 + 28, 28, 28);
+        if (icon) this.hud.add(icon);
+      }
     });
 
     // Populate the live clock immediately (both fields now exist).
@@ -470,7 +550,8 @@ export class GameScene extends Phaser.Scene {
 
   private buildKeepTab(): void {
     const s = this.state;
-    const stripBottom = this.buildStatusStrip(this.contentTop);
+    const postcardBottom = this.buildKeepPostcard(this.contentTop);
+    const stripBottom = this.buildStatusStrip(postcardBottom);
     const living = s.prisoners.filter((p) => p.alive);
     if (living.length === 0) {
       this.content.add(
@@ -538,6 +619,69 @@ export class GameScene extends Phaser.Scene {
     this.buildLogPanel(cursorY + 4);
   }
 
+  /**
+   * The living keep postcard: your keep, painted, at your tier — the light
+   * shifting with the in-game hour (day → dusk → night) and snow settling in
+   * winter. Returns the y below it; renders nothing if the art is missing.
+   */
+  private buildKeepPostcard(y: number): number {
+    const s = this.state;
+    const key = keepExteriorKey(s.tier, s.hour, s.winterDaysLeft > 0);
+    const w = VIEW.width - 32;
+    const h = 158;
+    const img = artCover(this, key, 16, y, w, h, 0.62);
+    if (!img) return y;
+    this.content.add(img);
+
+    // Winter: drifting snow, additively blended so the dark sheet vanishes.
+    if (s.winterDaysLeft > 0 && hasArt(this, "vfx_snowfall")) {
+      const snow = this.add
+        .tileSprite(16, y, w, h, "vfx_snowfall")
+        .setOrigin(0, 0)
+        .setBlendMode(Phaser.BlendModes.ADD)
+        .setAlpha(0.55);
+      this.content.add(snow);
+      if (!getSettings().reducedMotion) {
+        this.tweens.add({
+          targets: snow,
+          tilePositionY: -512,
+          duration: 14000,
+          repeat: -1,
+        });
+      }
+    }
+
+    // Torch sconces flanking the frame, alive after dusk.
+    if (this.anims.exists("vfx_torch_flame") && s.hour >= 17 && !getSettings().reducedMotion) {
+      for (const tx of [16 + 26, 16 + w - 26]) {
+        const torch = this.add.sprite(tx, y + h - 24, "vfx_torch_flame").setScale(0.42);
+        torch.play({ key: "vfx_torch_flame", startFrame: tx > 100 ? 3 : 0 });
+        this.content.add(torch);
+      }
+    }
+
+    // A quiet caption strip anchors the painting to the game state.
+    this.content.add(
+      this.add
+        .rectangle(16, y + h - 26, w, 26, COLORS.shadow, 0.55)
+        .setOrigin(0, 0),
+    );
+    this.content.add(
+      this.add.text(24, y + h - 22, `${tierTitle(s.tier)} — ${s.keepName}`, {
+        fontFamily: FONT.family,
+        fontSize: "13px",
+        color: COLORS.parchmentCss,
+      }),
+    );
+    this.content.add(
+      this.add
+        .rectangle(16, y, w, h)
+        .setOrigin(0, 0)
+        .setStrokeStyle(2, COLORS.gold, 0.6),
+    );
+    return y + h + 10;
+  }
+
   /** Warden morality (diverging bar) + honest next-day danger forecast. */
   private buildStatusStrip(y: number): number {
     const s = this.state;
@@ -546,8 +690,10 @@ export class GameScene extends Phaser.Scene {
     const panel = makePanel(this, 16, y, w, h);
 
     // ── Morality ──
+    const scalesIcon = artImage(this, "icon_scales_morality", 24, 18, 24, 24);
+    if (scalesIcon) panel.add(scalesIcon);
     panel.add(
-      this.add.text(12, 8, `⚖  Standing: ${moralityStanding(s.morality)}`, {
+      this.add.text(scalesIcon ? 42 : 12, 8, `${scalesIcon ? "" : "⚖  "}Standing: ${moralityStanding(s.morality)}`, {
         fontFamily: FONT.family,
         fontSize: "18px",
         color:
@@ -597,18 +743,20 @@ export class GameScene extends Phaser.Scene {
       }),
     );
     const dangers = assessDangers(s);
-    const items: Array<[string, number]> = [
-      ["Riot", dangers.riot],
-      ["Fire", dangers.fire],
-      ["Sick", dangers.disease],
-      ["Escape", dangers.escape],
+    const items: Array<[string, string, number]> = [
+      ["Riot", "icon_riot_fist", dangers.riot],
+      ["Fire", "icon_flame", dangers.fire],
+      ["Sick", "icon_plague_rat", dangers.disease],
+      ["Escape", "icon_ladder_escape", dangers.escape],
     ];
     const colW = (w - 24) / items.length;
-    items.forEach(([label, p], i) => {
+    items.forEach(([label, iconKey, p], i) => {
       const cxi = 12 + i * colW;
       const trackW = colW - 14;
+      const dIcon = artImage(this, iconKey, cxi + 10, 92, 20, 20);
+      if (dIcon) panel.add(dIcon);
       panel.add(
-        this.add.text(cxi, 86, label, { fontFamily: FONT.family, fontSize: "13px", color: COLORS.parchmentCss }),
+        this.add.text(dIcon ? cxi + 24 : cxi, 86, label, { fontFamily: FONT.family, fontSize: "13px", color: COLORS.parchmentCss }),
       );
       panel.add(this.add.rectangle(cxi, 104, trackW, 12, COLORS.shadow).setOrigin(0, 0));
       panel.add(
@@ -642,40 +790,64 @@ export class GameScene extends Phaser.Scene {
     const sev = COLORS.severity[p.severity] ?? COLORS.steel;
 
     // Severity swatch.
-    panel.add(this.add.rectangle(10, 10, 14, h - 20, sev).setOrigin(0, 0));
+    panel.add(this.add.rectangle(10, 10, 8, h - 20, sev).setOrigin(0, 0));
+
+    // Portrait in a rarity frame — the inmate at a glance.
+    const portrait = artImage(this, prisonerPortraitKey(p), 58, h / 2, 58, 58);
+    let textX = 34;
+    if (portrait) {
+      panel.add(portrait);
+      const frame = artImage(this, rarityFrameKey(p.rarity), 58, h / 2, 72, 72);
+      if (frame) panel.add(frame);
+      textX = 102;
+    }
 
     panel.add(
-      this.add.text(34, 10, `${p.name}`, {
+      this.add.text(textX, 8, `${p.name}`, {
         fontFamily: FONT.family,
-        fontSize: "20px",
+        fontSize: "19px",
         // Name tinted by rarity — the notoriety of the inmate at a glance.
         color: COLORS.rarity[p.rarity] ?? COLORS.parchmentCss,
       }),
     );
     panel.add(
-      this.add.text(34, 34, `◆ ${p.rarity}  •  ${p.severity}  •  ${p.sentenceDays}d left  •  ${cellName(p)}`, {
+      this.add.text(textX, 32, `◆ ${p.rarity}  •  ${p.severity}  •  ${p.sentenceDays}d left  •  ${cellName(p)}`, {
         fontFamily: FONT.family,
-        fontSize: "14px",
+        fontSize: "13px",
         color: COLORS.neutralCss,
       }),
     );
 
     // Health + unrest bars.
-    panel.add(this.add.text(34, 56, "HP", { fontFamily: FONT.family, fontSize: "13px", color: COLORS.neutralCss }));
-    panel.add(makeBar(this, 66, 58, 120, 12, p.health / 100, COLORS.good));
-    panel.add(this.add.text(196, 56, "Unrest", { fontFamily: FONT.family, fontSize: "13px", color: COLORS.neutralCss }));
-    panel.add(makeBar(this, 256, 58, 120, 12, p.unrest / 100, COLORS.bad));
+    panel.add(this.add.text(textX, 54, "HP", { fontFamily: FONT.family, fontSize: "13px", color: COLORS.neutralCss }));
+    panel.add(makeBar(this, textX + 30, 56, 100, 12, p.health / 100, COLORS.good));
+    panel.add(this.add.text(textX + 142, 54, "Unrest", { fontFamily: FONT.family, fontSize: "13px", color: COLORS.neutralCss }));
+    panel.add(makeBar(this, textX + 200, 56, 100, 12, p.unrest / 100, COLORS.bad));
 
     // Labour badge (the whole card is tappable to cycle it).
-    panel.add(
-      this.add
-        .text(w - 16, h / 2, `${LABOR_ICON[p.assignment]} ${p.assignment}`, {
-          fontFamily: FONT.family,
-          fontSize: "18px",
-          color: COLORS.goldCss,
-        })
-        .setOrigin(1, 0.5),
-    );
+    const laborIcon = artImage(this, LABOR_ICON_KEY[p.assignment], w - 30, h / 2 - 12, 30, 30);
+    if (laborIcon) {
+      panel.add(laborIcon);
+      panel.add(
+        this.add
+          .text(w - 30, h / 2 + 16, p.assignment, {
+            fontFamily: FONT.family,
+            fontSize: "13px",
+            color: COLORS.goldCss,
+          })
+          .setOrigin(0.5, 0.5),
+      );
+    } else {
+      panel.add(
+        this.add
+          .text(w - 16, h / 2, `${LABOR_ICON[p.assignment]} ${p.assignment}`, {
+            fontFamily: FONT.family,
+            fontSize: "18px",
+            color: COLORS.goldCss,
+          })
+          .setOrigin(1, 0.5),
+      );
+    }
 
     const hit = this.add
       .rectangle(0, 0, w, h, 0xffffff, 0.001)
@@ -726,41 +898,80 @@ export class GameScene extends Phaser.Scene {
     const availH = this.contentBottom - gridTop - yardH - 8;
     const cellH = Math.max(88, Math.min(150, Math.floor(availH / rows) - gap));
 
+    const winter = s.winterDaysLeft > 0;
+    const floorKeys = winter
+      ? ["tile_snow_dusted_stone_floor"]
+      : ["tile_stone_floor_plain", "tile_stone_floor_cracked", "tile_stone_floor_mossy"];
     for (let i = 0; i < cap; i++) {
       const x = 16 + (i % cols) * (cellW + gap);
       const y = gridTop + Math.floor(i / cols) * (cellH + gap);
       const p = byCell.get(i);
       const panel = makePanel(this, x, y, cellW, cellH);
+
+      // Stone-floor backdrop (painted tile), darkened for text contrast.
+      const floorKey = floorKeys[i % floorKeys.length];
+      if (p && hasArt(this, floorKey)) {
+        const floor = this.add
+          .image(2, 2, floorKey)
+          .setOrigin(0, 0)
+          .setDisplaySize(cellW - 4, cellH - 4)
+          .setTint(0x8a8a8a);
+        panel.add(floor);
+        panel.add(
+          this.add.rectangle(2, 2, cellW - 4, cellH - 4, COLORS.shadow, 0.28).setOrigin(0, 0),
+        );
+      } else if (!p && hasArt(this, "tile_cell_bars_door_open")) {
+        // An empty cell: the door stands open, waiting.
+        const bars = this.add
+          .image(2, 2, "tile_cell_bars_door_open")
+          .setOrigin(0, 0)
+          .setDisplaySize(cellW - 4, cellH - 4)
+          .setAlpha(0.5)
+          .setTint(0x777777);
+        panel.add(bars);
+      }
+
       panel.add(
         this.add.text(8, 6, `Cell ${i + 1}`, {
           fontFamily: FONT.family,
           fontSize: "12px",
-          color: COLORS.neutralCss,
-        }),
+          color: COLORS.parchmentCss,
+        }).setShadow(1, 1, "#000000", 2),
       );
       if (p) {
         const sev = COLORS.severity[p.severity] ?? COLORS.steel;
-        panel.add(this.add.rectangle(8, 26, 8, cellH - 36, sev).setOrigin(0, 0));
+        panel.add(this.add.rectangle(4, 26, 6, cellH - 34, sev).setOrigin(0, 0));
+
+        // Portrait in its rarity frame, centered in the cell.
+        const px = cellW / 2;
+        const py = Math.min(cellH / 2 - 8, 24 + (cellH - 74) / 2);
+        const portrait = artImage(this, prisonerPortraitKey(p), px, py, 58, 58);
+        if (portrait) {
+          panel.add(portrait);
+          const frame = artImage(this, rarityFrameKey(p.rarity), px, py, 72, 72);
+          if (frame) panel.add(frame);
+        }
         panel.add(
-          this.add.text(22, 26, clip(p.name, Math.floor((cellW - 30) / 8.5)), {
-            fontFamily: FONT.family,
-            fontSize: "15px",
-            color: COLORS.rarity[p.rarity] ?? COLORS.parchmentCss,
-          }),
+          this.add
+            .text(px, cellH - 40, clip(p.name, Math.floor((cellW - 16) / 8)), {
+              fontFamily: FONT.family,
+              fontSize: "14px",
+              color: COLORS.rarity[p.rarity] ?? COLORS.parchmentCss,
+            })
+            .setOrigin(0.5, 0)
+            .setShadow(1, 1, "#000000", 2),
         );
+        const laborIcon = artImage(this, LABOR_ICON_KEY[p.assignment], px - 34, cellH - 14, 20, 20);
+        if (laborIcon) panel.add(laborIcon);
         panel.add(
-          this.add.text(22, 48, `${p.severity} • ${p.sentenceDays}d`, {
-            fontFamily: FONT.family,
-            fontSize: "12px",
-            color: COLORS.neutralCss,
-          }),
-        );
-        panel.add(
-          this.add.text(22, cellH - 26, `${LABOR_ICON[p.assignment]} ${p.assignment}`, {
-            fontFamily: FONT.family,
-            fontSize: "14px",
-            color: COLORS.goldCss,
-          }),
+          this.add
+            .text(laborIcon ? px - 20 : px, cellH - 22, laborIcon ? p.assignment : `${LABOR_ICON[p.assignment]} ${p.assignment}`, {
+              fontFamily: FONT.family,
+              fontSize: "12px",
+              color: COLORS.goldCss,
+            })
+            .setOrigin(laborIcon ? 0 : 0.5, 0)
+            .setShadow(1, 1, "#000000", 2),
         );
         const hit = this.add
           .rectangle(0, 0, cellW, cellH, 0xffffff, 0.001)
@@ -771,13 +982,14 @@ export class GameScene extends Phaser.Scene {
       } else {
         panel.add(
           this.add
-            .text(cellW / 2, cellH / 2 + 6, "— empty —", {
+            .text(cellW / 2, cellH - 22, "— empty —", {
               fontFamily: FONT.family,
               fontSize: "13px",
               color: COLORS.neutralCss,
             })
             .setOrigin(0.5, 0.5)
-            .setAlpha(0.5),
+            .setAlpha(0.8)
+            .setShadow(1, 1, "#000000", 2),
         );
       }
       this.content.add(panel);
@@ -819,23 +1031,35 @@ export class GameScene extends Phaser.Scene {
       const panel = makePanel(this, 16, y, VIEW.width - 32, 152, "Government Dispatch");
       const p = offer.prisoner;
       const sev = COLORS.severity[p.severity] ?? COLORS.steel;
-      panel.add(this.add.rectangle(12, 40, 14, 96, sev).setOrigin(0, 0));
+      panel.add(this.add.rectangle(12, 40, 8, 96, sev).setOrigin(0, 0));
+
+      // The offered inmate, framed by their notoriety.
+      const portrait = artImage(this, prisonerPortraitKey(p), 74, 88, 88, 88);
+      let tx = 36;
+      if (portrait) {
+        panel.add(portrait);
+        const frame = artImage(this, rarityFrameKey(p.rarity), 74, 88, 106, 106);
+        if (frame) panel.add(frame);
+        tx = 136;
+      }
       panel.add(
-        this.add.text(36, 40, `${p.name}`, {
+        this.add.text(tx, 40, `${p.name}`, {
           fontFamily: FONT.family,
-          fontSize: "22px",
+          fontSize: "21px",
           color: COLORS.rarity[p.rarity] ?? COLORS.parchmentCss,
         }),
       );
+      const pip = artImage(this, rarityPipKey(p.rarity), tx + 10, 80, 20, 20);
+      if (pip) panel.add(pip);
       panel.add(
-        this.add.text(36, 70, `◆ ${p.rarity}  •  ${p.severity}  •  sentence ${p.sentenceDays}d`, {
+        this.add.text(pip ? tx + 24 : tx, 70, `${pip ? "" : "◆ "}${p.rarity}  •  ${p.severity}  •  sentence ${p.sentenceDays}d`, {
           fontFamily: FONT.family,
           fontSize: "15px",
           color: COLORS.neutralCss,
         }),
       );
       panel.add(
-        this.add.text(36, 96, `Pays ${offer.dailyPayout}/day  •  bounty +${offer.acceptBounty}`, {
+        this.add.text(tx, 96, `Pays ${offer.dailyPayout}/day  •  bounty +${offer.acceptBounty}`, {
           fontFamily: FONT.family,
           fontSize: "16px",
           color: COLORS.goldCss,
@@ -938,26 +1162,29 @@ export class GameScene extends Phaser.Scene {
     }
 
     // Keep buildings — one-time constructions, each a permanent dial.
-    const BUILDING_ROWS: Array<[Parameters<typeof costs.build>[0], string, string]> = [
-      ["infirmary", "🏥 Infirmary", "heals every inmate daily"],
-      ["chapel", "⛪ Chapel", "calms the cells daily"],
-      ["gallows", "🪢 Gallows", "fear: quiet cells, fewer escapes — hardens your soul"],
-      ["walls", "🧱 High Walls", "halves escape attempts"],
-      ["barracks", "🛏 Barracks", `bunks for ${BALANCE.buildings.barracks.quarters} more warders — crowding sours the corps`],
-      ["tavern", "🍺 Tavern", "ale and dice each evening lift the warders' spirits"],
+    const BUILDING_ROWS: Array<[Parameters<typeof costs.build>[0], string, string, string]> = [
+      ["infirmary", "🏥 Infirmary", "icon_infirmary_cross", "heals every inmate daily"],
+      ["chapel", "⛪ Chapel", "icon_chapel", "calms the cells daily"],
+      ["gallows", "🪢 Gallows", "icon_noose", "fear: quiet cells, fewer escapes — hardens your soul"],
+      ["walls", "🧱 High Walls", "icon_wall", "halves escape attempts"],
+      ["barracks", "🛏 Barracks", "", `bunks for ${BALANCE.buildings.barracks.quarters} more warders — crowding sours the corps`],
+      ["tavern", "🍺 Tavern", "icon_dice", "ale and dice each evening lift the warders' spirits"],
     ];
-    for (const [id, label, hint] of BUILDING_ROWS) {
+    for (const [id, label, iconKey, hint] of BUILDING_ROWS) {
       const built = s.buildings[id];
       const cost = costs.build(id, s);
       const panel2 = makePanel(this, 16, y, w, 66);
+      const bIcon = iconKey ? artImage(this, iconKey, 34, 33, 36, 36) : null;
+      if (bIcon) panel2.add(bIcon);
+      const lx = bIcon ? 60 : 16;
       panel2.add(
-        this.add.text(16, 10, label + (built ? "  ✓ built" : ""), {
+        this.add.text(lx, 10, (bIcon ? label.slice(label.indexOf(" ") + 1) : label) + (built ? "  ✓ built" : ""), {
           fontFamily: FONT.family, fontSize: "17px",
           color: built ? COLORS.goodCss : COLORS.parchmentCss,
         }),
       );
       panel2.add(
-        this.add.text(16, 36, hint, {
+        this.add.text(lx, 36, hint, {
           fontFamily: FONT.family, fontSize: "13px", color: COLORS.neutralCss,
         }),
       );
@@ -1097,6 +1324,16 @@ export class GameScene extends Phaser.Scene {
     this.time.delayedCall(delay, () => this.dayFeedback(beforeCoin));
   }
 
+  /** Play a one-shot VFX animation at (x, y); silently skips if not loaded.
+   * Also skips while a decision modal is up — the choice owns the screen. */
+  private playBurst(key: string, x: number, y: number, scale = 1): void {
+    if (!this.anims.exists(key) || getSettings().reducedMotion) return;
+    if (this.state?.pendingDecision) return;
+    const spr = this.add.sprite(x, y, key).setScale(scale).setDepth(920);
+    spr.play(key);
+    spr.once("animationcomplete", () => spr.destroy());
+  }
+
   /** Screen-shake, flashes, floating coin, and a toast for the day's outcome. */
   private dayFeedback(beforeCoin: number): void {
     const deaths = this.state.lastEvents.reduce((n, e) => n + e.deaths, 0);
@@ -1105,6 +1342,7 @@ export class GameScene extends Phaser.Scene {
       this.juice.flash(COLORS.blood);
     } else if (this.state.lastEvents.some((e) => e.kind === "fire")) {
       this.juice.shake(300, 0.01);
+      this.playBurst("vfx_fire_burst", VIEW.width / 2, VIEW.height / 2 - 120, 1.4);
     }
     const coinDelta = Math.round(this.state.resources.coin - beforeCoin);
     if (coinDelta !== 0) {
@@ -1135,6 +1373,9 @@ export class GameScene extends Phaser.Scene {
     }
     this.persist();
     this.renderAll();
+    if (res.ok && action.type === "build") {
+      this.playBurst("vfx_smoke_puff", VIEW.width / 2, VIEW.height / 2, 1.3);
+    }
     const coinDelta = Math.round(this.state.resources.coin - beforeCoin);
     if (coinDelta !== 0) {
       this.juice.floatNumber(
@@ -1143,6 +1384,9 @@ export class GameScene extends Phaser.Scene {
         `${coinDelta > 0 ? "+" : ""}${coinDelta}`,
         coinDelta > 0 ? COLORS.goldCss : COLORS.bloodCss,
       );
+      if (coinDelta > 0) {
+        this.playBurst("vfx_coin_sparkle", this.coinChip.x, this.coinChip.y, 0.8);
+      }
     }
   }
 
@@ -1253,13 +1497,41 @@ export class GameScene extends Phaser.Scene {
 
     const panelW = VIEW.width - 56;
     const optH = 92;
-    const panelH = 150 + d.options.length * (optH + 14);
+
+    // Header art: a painted banner for the situation, or the legend's own
+    // portrait when a named inmate's story takes the night.
+    const legendId = d.kind === "legend" ? String(d.context.legendId ?? "") : "";
+    const bannerKey = d.kind === "legend" ? `legend_${legendId}` : decisionBannerKey(d.kind);
+    const bannerAvailable = hasArt(this, bannerKey);
+    const bannerH = bannerAvailable
+      ? d.kind === "legend"
+        ? 210
+        : Math.round((panelW - 24) * (484 / 1328))
+      : 0;
+
+    const panelH = 150 + bannerH + d.options.length * (optH + 14);
     const px = 28;
-    const py = Math.max(60, (VIEW.height - panelH) / 2);
-    const panel = makePanel(this, px, py, panelW, panelH, d.kind === "riot" ? "⚔  RIOT!" : "💰  A Quiet Word");
+    const py = Math.max(40, (VIEW.height - panelH) / 2);
+    const panel = makePanel(this, px, py, panelW, panelH, DECISION_TITLE[d.kind] ?? "A Hard Choice");
+
+    if (bannerAvailable) {
+      if (d.kind === "legend") {
+        const lp = artImage(this, bannerKey, panelW / 2, 40 + bannerH / 2, bannerH - 8, bannerH - 8);
+        if (lp) panel.add(lp);
+      } else {
+        const art = artCover(this, bannerKey, 12, 40, panelW - 24, bannerH - 6, 0.5);
+        if (art) panel.add(art);
+        panel.add(
+          this.add
+            .rectangle(12, 40, panelW - 24, bannerH - 6)
+            .setOrigin(0, 0)
+            .setStrokeStyle(2, COLORS.gold, 0.5),
+        );
+      }
+    }
 
     panel.add(
-      this.add.text(16, 44, d.prompt, {
+      this.add.text(16, 44 + bannerH, d.prompt, {
         fontFamily: FONT.family,
         fontSize: "18px",
         color: COLORS.parchmentCss,
@@ -1269,7 +1541,7 @@ export class GameScene extends Phaser.Scene {
     );
 
     d.options.forEach((o, i) => {
-      const oy = 118 + i * (optH + 14);
+      const oy = 118 + bannerH + i * (optH + 14);
       panel.add(
         makeButton(this, {
           x: 16,
@@ -1339,6 +1611,9 @@ export class GameScene extends Phaser.Scene {
           `${coinDelta > 0 ? "+" : ""}${coinDelta}`,
           coinDelta > 0 ? COLORS.goldCss : COLORS.bloodCss,
         );
+        if (coinDelta > 0) {
+          this.playBurst("vfx_coin_sparkle", this.coinChip.x, this.coinChip.y, 0.8);
+        }
       }
       // A decision can end the run (or earn a deed) on the spot.
       this.time.delayedCall(2600, () => this.toastAchievements());
@@ -1355,22 +1630,36 @@ export class GameScene extends Phaser.Scene {
       this.add.rectangle(0, 0, VIEW.width, VIEW.height, COLORS.shadow, 0.92).setOrigin(0, 0),
     );
 
-    let y = 120;
+    // The reign, painted: each ending has its own commissioned vignette.
+    let y = 40;
+    const endArt = artCover(this, `end_${ending.id}`, (VIEW.width - 420) / 2, y, 420, 300, 0.4);
+    if (endArt) {
+      this.content.add(endArt);
+      this.content.add(
+        this.add
+          .rectangle((VIEW.width - 420) / 2, y, 420, 300)
+          .setOrigin(0, 0)
+          .setStrokeStyle(3, ending.won ? COLORS.gold : COLORS.blood, 0.85),
+      );
+      y += 316;
+    } else {
+      y = 120;
+    }
     this.content.add(
       this.add
         .text(VIEW.width / 2, y, ending.title, {
           fontFamily: FONT.family,
-          fontSize: "34px",
+          fontSize: "32px",
           color: accent,
         })
         .setOrigin(0.5, 0),
     );
-    y += 60;
+    y += 48;
     this.content.add(
       this.add
         .text(VIEW.width / 2, y, ending.text, {
           fontFamily: FONT.family,
-          fontSize: "18px",
+          fontSize: "17px",
           color: COLORS.parchmentCss,
           align: "center",
           wordWrap: { width: VIEW.width - 96 },
@@ -1378,7 +1667,7 @@ export class GameScene extends Phaser.Scene {
         })
         .setOrigin(0.5, 0),
     );
-    y += 170;
+    y += endArt ? 128 : 170;
 
     // The reign in numbers.
     const st = s.stats;

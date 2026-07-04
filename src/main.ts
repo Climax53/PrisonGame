@@ -17,9 +17,10 @@ const config: Phaser.Types.Core.GameConfig = {
     autoCenter: Phaser.Scale.CENTER_BOTH,
   },
   scene: [GameScene],
-  // Crisp pixel-art scaling.
-  pixelArt: true,
-  render: { antialias: false, roundPixels: true },
+  // The commissioned art is painterly "high-bit" pixel work delivered at
+  // 1024px masters and downscaled — linear filtering keeps it smooth at any
+  // phone DPI (nearest-neighbour would shimmer on non-integer scales).
+  render: { antialias: true, roundPixels: true },
 };
 
 const game = new Phaser.Game(config);

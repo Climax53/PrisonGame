@@ -120,6 +120,21 @@ await page.evaluate(() => {
   scene().renderAll();
 });
 
+// ── Art integration: the loader must have delivered the commissioned set and
+// the key textures must be live in the running game.
+const art = await page.evaluate(() => {
+  const t = scene().textures;
+  return {
+    icons: t.exists("icon_coin") && t.exists("icon_keep_tower") && t.exists("icon_scales_morality"),
+    portraits: t.exists("warden_steward") && t.exists("base_petty_m") && t.exists("legend_alchemist"),
+    frames: t.exists("frame_common") && t.exists("frame_mythic"),
+    exteriors: t.exists("ext_village_day") && t.exists("ext_crown_night") && t.exists("ext_town_winter"),
+    banners: t.exists("banner_riot") && t.exists("banner_duel") && t.exists("banner_starvingVillage"),
+    endings: t.exists("end_ironWarden") && t.exists("end_bankrupt"),
+    vfxAnims: scene().anims.exists("vfx_fire_burst") && scene().anims.exists("vfx_coin_sparkle"),
+  };
+});
+
 // Verify the new systems are live in the running game.
 const systems = await page.evaluate(() => {
   const s = scene().state;
@@ -302,6 +317,13 @@ assert(autoClock.fracInRange, "the day-fraction (sun-strip) stays in [0,1]");
 assert(autoClock.labelHasText, "the live clock label renders text");
 assert(systems.guardsHaveMorale, "warders carry morale");
 assert(systems.barracksAndTavern, "barracks and tavern are in the building roster");
+assert(art.icons, "UI icon art is loaded");
+assert(art.portraits, "portrait art is loaded (wardens, prisoners, legends)");
+assert(art.frames, "rarity frame art is loaded");
+assert(art.exteriors, "keep exterior art is loaded for tiers and times of day");
+assert(art.banners, "decision banner art is loaded");
+assert(art.endings, "ending art is loaded");
+assert(art.vfxAnims, "VFX animations are registered");
 assert(raisedRiot, "a forced riot raised a decision");
 assert(modalRendered, "the decision modal rendered");
 assert(resolvedClean, "resolving the decision cleared it");

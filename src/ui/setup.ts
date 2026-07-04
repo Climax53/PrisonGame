@@ -20,6 +20,7 @@ import {
   type Pacing,
 } from "../core";
 import { availableWardens, getProfile, markDailyPlayed } from "./profile";
+import { artCover, artImage } from "./art";
 import { COLORS, FONT, VIEW } from "./theme";
 import { makeButton, makePanel } from "./widgets";
 
@@ -71,24 +72,38 @@ export function runSetup(
         .setOrigin(0, 0)
         .setInteractive(),
     );
+    // The key art breathes behind the whole sheet, kept dark enough to read over.
+    const kb = artCover(scene, "keyart", 0, 0, VIEW.width, VIEW.height, 0.35);
+    if (kb) {
+      kb.setAlpha(0.32);
+      layer.add(kb);
+    }
 
-    layer.add(
-      scene.add
-        .text(VIEW.width / 2, 40, "⚜  A NEW REIGN", {
-          fontFamily: FONT.family,
-          fontSize: "30px",
-          color: COLORS.goldCss,
-        })
-        .setOrigin(0.5, 0),
-    );
+    // Carved-stone wordmark, or the plain text banner if the art is missing.
+    const logo = artImage(scene, "logo", VIEW.width / 2, 46, 360, 130);
+    if (logo) {
+      layer.add(logo);
+    } else {
+      layer.add(
+        scene.add
+          .text(VIEW.width / 2, 40, "⚜  A NEW REIGN", {
+            fontFamily: FONT.family,
+            fontSize: "30px",
+            color: COLORS.goldCss,
+          })
+          .setOrigin(0.5, 0),
+      );
+    }
 
-    // ── Warden carousel ──
+    // ── Warden carousel — the candidate, painted, beside their record ──
     const w = WARDENS[wardenIdx];
     const isUnlocked = unlocked.has(w.id);
-    const card = makePanel(scene, 48, 96, VIEW.width - 96, 240);
+    const cardW = VIEW.width - 96;
+    const cardH = 300;
+    const card = makePanel(scene, 48, 110, cardW, cardH);
     card.add(
       scene.add
-        .text((VIEW.width - 96) / 2, 18, `${w.glyph}  ${w.name}`, {
+        .text(cardW / 2, 14, `${w.glyph}  ${w.name}`, {
           fontFamily: FONT.family,
           fontSize: "26px",
           color: isUnlocked ? COLORS.parchmentCss : COLORS.neutralCss,
@@ -97,7 +112,7 @@ export function runSetup(
     );
     card.add(
       scene.add
-        .text((VIEW.width - 96) / 2, 52, w.epithet, {
+        .text(cardW / 2, 48, w.epithet, {
           fontFamily: FONT.family,
           fontSize: "15px",
           color: COLORS.neutralCss,
@@ -105,28 +120,35 @@ export function runSetup(
         })
         .setOrigin(0.5, 0),
     );
+    const portrait = artImage(scene, `warden_${w.id}`, 96, 172, 156, 156);
+    let bx = 20;
+    if (portrait) {
+      if (!isUnlocked) portrait.setTint(0x2a2a2a);
+      card.add(portrait);
+      bx = 186;
+    }
     card.add(
-      scene.add.text(20, 84, isUnlocked ? w.blurb : "🔒 Locked", {
+      scene.add.text(bx, 84, isUnlocked ? w.blurb : "🔒 Locked", {
         fontFamily: FONT.family,
-        fontSize: "16px",
+        fontSize: "15px",
         color: COLORS.parchmentCss,
-        wordWrap: { width: VIEW.width - 136 },
+        wordWrap: { width: cardW - bx - 20 },
       }),
     );
     const effectLine = isUnlocked
       ? w.effects
       : `Unlock: ${unlockHint(w.unlockedBy)}`;
     card.add(
-      scene.add.text(20, 150, effectLine, {
+      scene.add.text(bx, 178, effectLine, {
         fontFamily: FONT.family,
         fontSize: "14px",
         color: isUnlocked ? COLORS.goldCss : COLORS.badCss,
-        wordWrap: { width: VIEW.width - 136 },
+        wordWrap: { width: cardW - bx - 20 },
       }),
     );
     card.add(
       scene.add
-        .text((VIEW.width - 96) / 2, 212, `${wardenIdx + 1} / ${WARDENS.length}`, {
+        .text(cardW / 2, cardH - 26, `${wardenIdx + 1} / ${WARDENS.length}`, {
           fontFamily: FONT.family,
           fontSize: "13px",
           color: COLORS.neutralCss,
@@ -136,7 +158,7 @@ export function runSetup(
     layer.add(card);
     layer.add(
       makeButton(scene, {
-        x: 8, y: 180, width: 36, height: 72, label: "‹", fontSize: 28,
+        x: 8, y: 224, width: 36, height: 72, label: "‹", fontSize: 28,
         onTap: () => {
           wardenIdx = (wardenIdx + WARDENS.length - 1) % WARDENS.length;
           render();
@@ -145,7 +167,7 @@ export function runSetup(
     );
     layer.add(
       makeButton(scene, {
-        x: VIEW.width - 44, y: 180, width: 36, height: 72, label: "›", fontSize: 28,
+        x: VIEW.width - 44, y: 224, width: 36, height: 72, label: "›", fontSize: 28,
         onTap: () => {
           wardenIdx = (wardenIdx + 1) % WARDENS.length;
           render();
@@ -154,7 +176,7 @@ export function runSetup(
     );
 
     // ── Identity ──
-    let y = 356;
+    let y = 428;
     const idPanel = makePanel(scene, 48, y, VIEW.width - 96, 150, "Identity");
     idPanel.add(
       scene.add.text(16, 40, `Warden:  ${wardenName}`, {
@@ -177,9 +199,20 @@ export function runSetup(
         },
       }),
     );
-    // Heraldry row: sigils then colours.
+    // Heraldry row: sigils (painted when loaded) then colours.
     SIGILS.forEach((sig, i) => {
       const selected = i === sigilIdx;
+      const size = selected ? 38 : 28;
+      const img = artImage(scene, `sigil_${i}`, 32 + i * 42, 130, size, size);
+      if (img) {
+        img.setAlpha(selected ? 1 : 0.45).setInteractive({ useHandCursor: true });
+        img.on("pointerup", () => {
+          sigilIdx = i;
+          render();
+        });
+        idPanel.add(img);
+        return;
+      }
       const b = scene.add
         .text(16 + i * 42, 116, sig, {
           fontFamily: FONT.family,
