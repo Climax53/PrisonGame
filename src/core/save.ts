@@ -10,6 +10,7 @@
 // ─────────────────────────────────────────────────────────────────────────────
 
 import { assignCells, emptyStats } from "./state";
+import { TRAITS } from "./traits";
 import { RARITY_ORDER, type GameState, type Rarity } from "./types";
 
 /**
@@ -21,8 +22,9 @@ import { RARITY_ORDER, type GameState, type Rarity } from "./types";
  * v3 — adds run-arc fields: stats, crownDays, winterDaysLeft, gameWon, endingId
  * v4 — adds warden class, identity (names/heraldry), pacing, buildings, legends
  * v5 — adds the hour clock, guard morale, prisoner cells, barracks/tavern
+ * v6 — adds optional prisoner traits (traits.ts)
  */
-export const SAVE_VERSION = 5;
+export const SAVE_VERSION = 6;
 
 export interface SaveBlob {
   version: number;
@@ -65,6 +67,10 @@ const MIGRATIONS: Record<number, (s: GameState) => void> = {
     s.buildings.tavern ??= false;
     // Cells are assigned by the repair pass (shared with corrupted saves).
   },
+  5: () => {
+    // v5 → v6: Prisoner.trait is optional — an old inmate simply has none.
+    // Nothing to fill; the repair pass drops any garbage trait values.
+  },
 };
 
 /**
@@ -82,14 +88,22 @@ function repair(s: GameState): GameState | null {
 
   const validRarity = (r: unknown): r is Rarity =>
     typeof r === "string" && (RARITY_ORDER as string[]).includes(r);
+  // Missing trait is fine (most inmates have none); a garbage value is dropped.
+  const scrubTrait = (p: GameState["prisoners"][number]): void => {
+    if (p.trait !== undefined && !(typeof p.trait === "string" && p.trait in TRAITS)) {
+      delete p.trait;
+    }
+  };
   for (const p of s.prisoners) {
     if (!validRarity(p.rarity)) p.rarity = "common";
+    scrubTrait(p);
   }
   for (const g of s.guards) {
     if (!validRarity(g.rarity)) g.rarity = "common";
   }
   for (const o of s.offers ?? []) {
     if (!validRarity(o.prisoner.rarity)) o.prisoner.rarity = "common";
+    scrubTrait(o.prisoner);
   }
   if (typeof s.crownDays !== "number" || Number.isNaN(s.crownDays)) s.crownDays = 0;
   if (typeof s.winterDaysLeft !== "number" || Number.isNaN(s.winterDaysLeft)) {

@@ -59,8 +59,13 @@ export const DANGER_COLOR: Record<string, number> = {
 };
 
 export const FONT = {
+  /** Body/stat text — monospace keeps numbers aligned and the retro feel. */
   family: 'ui-monospace, "Courier New", monospace',
-  // A pixel-ish monospace gives the retro feel without bundling a font file.
+  /** Big medieval display face (titles, tabs, the numbers that matter).
+   * Pirata One, OFL, bundled at public/fonts. */
+  display: '"PirataOne", "Palatino", serif',
+  /** Readable medieval face for buttons and subheads. MedievalSharp, OFL. */
+  medieval: '"MedievalSharp", "Palatino", serif',
 };
 
 /** Logical design resolution. The game scales to fit any phone via Phaser FIT. */

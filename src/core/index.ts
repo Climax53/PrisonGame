@@ -70,6 +70,7 @@ export {
   prisonerRarityMods,
   guardRarityMods,
 } from "./rarity";
+export { TRAITS, TRAIT_IDS, traitDef, type TraitDef } from "./traits";
 export {
   moralityStanding,
   moralityFactor,

@@ -1,5 +1,56 @@
 # Changelog
 
+## Unreleased — "The World-Class Pass" (density, jail map, content, store, FTUE)
+
+Grounded in a fresh research sweep (docs/research/UI_DENSITY_DIRECTIVES.md).
+
+### Added
+- **Medieval typography, bundled**: Pirata One (display) + MedievalSharp
+  (buttons/subheads), both OFL, self-hosted woff2, loaded before boot. Panel
+  titles, tab labels, HUD title/tier, dossier and store headings all speak
+  in the display face; body/stat text stays monospace for aligned numbers.
+- **The jail map**: the Cells tab is now an actual cell block — a torchlit
+  central corridor with the hearth at its head, cells flanking it behind
+  bars (vertical slices of the bars painting), straw bedding, patrolling
+  warders (animated ⚔ figures matching your corps; "no watch!" warning when
+  guardless), snow-dusted floors in winter. Tap any occupied cell for the
+  dossier.
+- **The prisoner dossier**: tap any inmate anywhere — full sheet with framed
+  portrait, rarity pip, trait and temperament, earnings/sentence/cell line,
+  vitals, and a DIRECT five-station labour picker (replaces blind
+  tap-to-cycle).
+- **Prisoner traits** (core, deterministic): Gaol-Lunged, Brawler,
+  Silver-Tongue, Escape Artist, Penitent, Iron-Backed — 55% of intake rolls
+  one; traits move payout, unrest, health, labour, and the (still honest)
+  escape forecast. Save v6.
+- **Six new story decisions**: the witch trial, the tax assessor, the
+  gravedigger's offer, the harvest festival, the deathbed confession, the
+  rival warden's envoy — full three-option cards with morality/coin/rep
+  couplings. **Three new auto events**: the wandering friar, the crown
+  audit, the cell search. Intake now scales with tier (3 offers at village
+  → 5 at crown). Bigger name pools.
+- **FTUE overhaul**: the LETTER OF APPOINTMENT opens every new reign (the
+  magistrate's portrait, your name illuminated, a 40-coin signing bonus),
+  and THE FIRST DECREES — a learn-by-doing checklist strip (accept, assign,
+  buy, skip, retire) paying 15 coin per real action + 50 on completion,
+  skippable, one-time. The static tour cut from five panels to three.
+- **The Royal Mint** — ethical monetization scaffolding (docs/MONETIZATION.md):
+  Crowns 👑 premium currency EARNED today (deeds pay 10–25 each; daily
+  challenge pays 15) and purchasable only when real storefronts connect
+  (payments adapter stubbed honestly — nothing pretends to charge). Catalog:
+  crown packs (display), **Keep Themes DLC** (Midnight Keep, Winterhold —
+  cosmetic postcard/accent re-dressings), **warden instant-unlocks** (every
+  warden stays earnable by play), and crowns→coin conversion for the current
+  reign. HUD purse, settings entry, 20 store unit tests.
+- **Ambient life — no dead screens**: hourly coin drips float in as they
+  accrue; prisoners mutter (parchment speech bubbles keyed to their state);
+  the Retire button breathes at the bell; patrolling warders pace the map;
+  torch sconces and drifting snow continue on the postcard.
+
+### Changed
+- Tests 160 → 203+ (traits/content/store suites); smoke suite grown to 41
+  assertions (fonts, dossier, Mint, jail map).
+
 ## Unreleased — "The Painted Keep" cycle (art round 1 integrated)
 
 ### Added

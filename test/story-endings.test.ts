@@ -22,6 +22,11 @@ function richState(seed: number): GameState {
     p.unrest = 70;
     p.health = 40;
   }
+  // One inmate at death's door (condemnedConfession), a burial on the books
+  // (gravedigger), and a reign old enough for festivals and rival envoys.
+  s.prisoners[s.prisoners.length - 1].health = 20;
+  s.stats.totalDeaths = 1;
+  s.day = 12;
   s.resources.food = 60;
   s.resources.coin = 300;
   s.rngState = rng.state;
@@ -29,15 +34,15 @@ function richState(seed: number): GameState {
 }
 
 describe("story decisions", () => {
-  it("the deck offers 8 distinct kinds", () => {
-    expect(new Set(STORY_KINDS).size).toBe(8);
+  it("the deck offers 14 distinct kinds", () => {
+    expect(new Set(STORY_KINDS).size).toBe(14);
   });
 
   it("every card can fire and every option resolves without corruption", () => {
     const seen = new Set<string>();
     // Sweep seeds until each kind has fired at least once; resolve EVERY option
     // of each fired card on cloned states.
-    for (let seed = 0; seed < 4000 && seen.size < 8; seed++) {
+    for (let seed = 0; seed < 12000 && seen.size < STORY_KINDS.length; seed++) {
       const s = richState(seed);
       const rng = new Rng(seed * 31 + 7);
       const d = pickStoryDecision(s, rng);

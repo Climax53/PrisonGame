@@ -504,6 +504,329 @@ const informant: StoryCard = {
   },
 };
 
+const witchTrial: StoryCard = {
+  kind: "witchTrial",
+  eligible: (s) => s.prisoners.some((p) => p.alive && p.severity === "political"),
+  build: (s, rng) => {
+    const target = s.prisoners.find((p) => p.alive && p.severity === "political")!;
+    const fee = rng.int(25, 50);
+    return {
+      kind: "witchTrial",
+      day: s.day,
+      prompt: `A torch-lit mob gathers at the gate, howling that ${target.name} is a witch and demanding the pyre. The warders bar the door and wait on your word.`,
+      options: [
+        { id: "handOver", label: "Hand them over", hint: "The mob loves you for it. A murder on your soul." },
+        { id: "defy", label: "Defy the mob", hint: "Conscience kept; the town sours and the cells stir." },
+        { id: "magistrate", label: `Demand a trial (${fee} coin)`, hint: "The law decides. Costs coin, settles nothing else." },
+      ],
+      context: { targetId: target.id, targetName: target.name, fee },
+    };
+  },
+  resolve: (s, rng, optionId, d) => {
+    void rng;
+    const target = s.prisoners.find((p) => p.id === d.context.targetId && p.alive);
+    const name = d.context.targetName as string;
+    const fee = d.context.fee as number;
+    if (!target) {
+      const msg = `The mob finds ${name} already gone from the keep, and drifts home muttering.`;
+      pushLog(s, msg, "neutral");
+      return { ok: true, message: msg, tone: "neutral" };
+    }
+    if (optionId === "handOver") {
+      target.alive = false;
+      s.stats.totalDeaths += 1;
+      adjustMorality(s, -8);
+      rep(s, 4);
+      const msg = `You open the gate. ${name} burns at the crossroads while the town cheers your name.`;
+      pushLog(s, msg, "bad");
+      return { ok: true, message: msg, tone: "bad", deaths: 1 };
+    }
+    if (optionId === "defy") {
+      adjustMorality(s, 5);
+      rep(s, -4);
+      for (const p of s.prisoners) {
+        if (p.alive) p.unrest = clamp(p.unrest + 8, 0, 100);
+      }
+      const msg = "You face the torches from the wall and refuse. The mob curses your name; the cells seethe at the long night of shouting.";
+      pushLog(s, msg, "good");
+      return { ok: true, message: msg, tone: "good" };
+    }
+    // magistrate
+    s.resources.coin -= Math.min(fee, Math.max(0, s.resources.coin));
+    const msg = `You buy the magistrate's court a seat at the matter — ${fee} coin in "fees." The mob disperses to await a verdict that will take months.`;
+    pushLog(s, msg, "neutral");
+    return { ok: true, message: msg, tone: "neutral" };
+  },
+};
+
+const taxAssessor: StoryCard = {
+  kind: "taxAssessor",
+  eligible: (s) => s.resources.coin > 250,
+  build: (s, rng) => {
+    const bribe = rng.int(30, 60);
+    return {
+      kind: "taxAssessor",
+      day: s.day,
+      prompt:
+        "A crown tax assessor arrives unannounced, ink-stained and unsmiling, and asks to see the keep's ledgers. All of them.",
+      options: [
+        { id: "openBooks", label: "Open the books", hint: "Lose 8% of your coin. Honesty is noticed." },
+        { id: "bribe", label: `Slip them ${bribe} coin`, hint: "Cheaper than taxes — unless you're caught." },
+        { id: "hide", label: "Hide coin in the walls", hint: "A coin toss: keep it all, or lose more and look worse." },
+      ],
+      context: { bribe },
+    };
+  },
+  resolve: (s, rng, optionId, d) => {
+    const bribe = d.context.bribe as number;
+    if (optionId === "openBooks") {
+      const due = Math.round(Math.max(0, s.resources.coin) * 0.08);
+      s.resources.coin -= due;
+      rep(s, 3);
+      const msg = `The assessor combs every page and levies ${due} coin. Your candor travels back to court.`;
+      pushLog(s, msg, "good");
+      return { ok: true, message: msg, tone: "good" };
+    }
+    if (optionId === "bribe") {
+      s.resources.coin -= Math.min(bribe, Math.max(0, s.resources.coin));
+      adjustMorality(s, -3);
+      if (rng.chance(0.35)) {
+        rep(s, -8);
+        const msg = `The assessor pockets your ${bribe} coin — then reports the attempt anyway. The crown's trust craters.`;
+        pushLog(s, msg, "bad");
+        return { ok: true, message: msg, tone: "bad" };
+      }
+      const msg = `${bribe} coin vanishes into the assessor's satchel, and the ledgers pass unread.`;
+      pushLog(s, msg, "neutral");
+      return { ok: true, message: msg, tone: "neutral" };
+    }
+    // hide
+    if (rng.chance(0.5)) {
+      const msg = "The assessor taps the walls, finds nothing, and departs. Your coin sleeps safe behind the third stone.";
+      pushLog(s, msg, "neutral");
+      return { ok: true, message: msg, tone: "neutral" };
+    }
+    const lost = Math.round(Math.max(0, s.resources.coin) * 0.15);
+    s.resources.coin -= lost;
+    rep(s, -5);
+    const msg = `A loose stone betrays you — the assessor seizes ${lost} coin and writes a long, unkind report.`;
+    pushLog(s, msg, "bad");
+    return { ok: true, message: msg, tone: "bad" };
+  },
+};
+
+const gravedigger: StoryCard = {
+  kind: "gravedigger",
+  eligible: (s) => s.stats.totalDeaths >= 1,
+  build: (s, rng) => {
+    const offer = rng.int(40, 80);
+    return {
+      kind: "gravedigger",
+      day: s.day,
+      prompt:
+        "A gravedigger with black fingernails and a friendly manner offers coin for the keep's \"unclaimed\" dead. He does not say who's buying, and you do not ask.",
+      options: [
+        { id: "sell", label: `Take ${offer} coin`, hint: "The dead pay one last time. Your soul keeps the ledger." },
+        { id: "refuse", label: "Refuse him", hint: "The dead rest whole. A small mercy, cheaply kept." },
+        { id: "donate", label: "Donate to the infirmary school", hint: "The surgeons learn; the crown approves. Still a little grim." },
+      ],
+      context: { offer },
+    };
+  },
+  resolve: (s, rng, optionId, d) => {
+    void rng;
+    const offer = d.context.offer as number;
+    if (optionId === "sell") {
+      s.resources.coin += offer;
+      s.stats.totalCoinEarned += offer;
+      adjustMorality(s, -6);
+      const msg = `The cart leaves heavier by night, and your purse by ${offer} coin. Some sales are not spoken of at chapel.`;
+      pushLog(s, msg, "bad");
+      return { ok: true, message: msg, tone: "bad" };
+    }
+    if (optionId === "refuse") {
+      adjustMorality(s, 2);
+      const msg = "You send the gravedigger off empty-handed. The dead keep what little is still theirs.";
+      pushLog(s, msg, "good");
+      return { ok: true, message: msg, tone: "good" };
+    }
+    // donate
+    rep(s, 3);
+    adjustMorality(s, -1);
+    const msg = "The unclaimed dead go to the infirmary school under seal. The surgeons send thanks; the crown notes your civic spirit.";
+    pushLog(s, msg, "neutral");
+    return { ok: true, message: msg, tone: "neutral" };
+  },
+};
+
+const harvestFestival: StoryCard = {
+  kind: "harvestFestival",
+  eligible: (s) => s.day >= 10 && s.morality > -40,
+  build: (s, rng) => {
+    void rng;
+    return {
+      kind: "harvestFestival",
+      day: s.day,
+      prompt:
+        "The village holds its harvest festival, and — wonder of wonders — the keep is invited. Fiddles carry over the wall; the cells press to the bars to listen.",
+      options: [
+        { id: "attend", label: "March them down, guarded", hint: "A rare joy calms every cell. One might slip the line." },
+        { id: "gift", label: "Send a gift of food", hint: "Costs 20 food. The village toasts your name." },
+        { id: "decline", label: "Decline politely", hint: "The keep stays a keep. Nothing ventured." },
+      ],
+      context: {},
+    };
+  },
+  resolve: (s, rng, optionId, d) => {
+    void d;
+    if (optionId === "attend") {
+      for (const p of s.prisoners) {
+        if (p.alive) p.unrest = clamp(p.unrest - 15, 0, 100);
+      }
+      const living = s.prisoners.filter((p) => p.alive);
+      if (living.length > 0 && rng.chance(0.2)) {
+        const runner = living.sort((a, b) => b.unrest - a.unrest)[0];
+        runner.alive = false;
+        s.stats.totalEscapes += 1;
+        rep(s, -BALANCE.reputation.perEscape);
+        const msg = `The inmates dance in the square like free men — and ${runner.name} makes it true, vanishing between the bonfires.`;
+        pushLog(s, msg, "bad");
+        return { ok: true, message: msg, tone: "bad" };
+      }
+      const msg = "The inmates dance, badly and joyfully, ringed by warders. Every soul returns — lighter than it left.";
+      pushLog(s, msg, "good");
+      return { ok: true, message: msg, tone: "good" };
+    }
+    if (optionId === "gift") {
+      s.resources.food = round1(Math.max(0, s.resources.food - 20));
+      rep(s, 3);
+      const msg = "A cart of the keep's food rolls down to the festival. The village drinks your health till the fires burn low.";
+      pushLog(s, msg, "good");
+      return { ok: true, message: msg, tone: "good" };
+    }
+    // decline
+    const msg = "You send polite regrets. The fiddles play on without the keep.";
+    pushLog(s, msg, "neutral");
+    return { ok: true, message: msg, tone: "neutral" };
+  },
+};
+
+const condemnedConfession: StoryCard = {
+  kind: "condemnedConfession",
+  eligible: (s) => s.prisoners.some((p) => p.alive && p.health < 30),
+  build: (s, rng) => {
+    const dying = s.prisoners
+      .filter((p) => p.alive && p.health < 30)
+      .sort((a, b) => a.health - b.health)[0];
+    const price = rng.int(60, 100);
+    return {
+      kind: "condemnedConfession",
+      day: s.day,
+      prompt: `${dying.name} is dying, and knows it. Through cracked lips they confess to a crime the magistrate never solved — and beg to die at home, under their own roof.`,
+      options: [
+        { id: "record", label: "Record it; send them home", hint: "A cell freed, a debt of mercy paid. The town approves." },
+        { id: "sellIt", label: "Sell the confession", hint: "The magistrate pays well for closed cases. The dying stay put." },
+        { id: "ignore", label: "Ignore it", hint: "Fever talk. Nothing changes." },
+      ],
+      context: { targetId: dying.id, targetName: dying.name, price },
+    };
+  },
+  resolve: (s, rng, optionId, d) => {
+    void rng;
+    const target = s.prisoners.find((p) => p.id === d.context.targetId && p.alive);
+    const name = d.context.targetName as string;
+    const price = d.context.price as number;
+    if (!target) {
+      const msg = `${name} is past confessing now.`;
+      pushLog(s, msg, "neutral");
+      return { ok: true, message: msg, tone: "neutral" };
+    }
+    if (optionId === "record") {
+      target.alive = false; // leaves the keep, carried home
+      s.stats.totalReleased += 1;
+      adjustMorality(s, 5);
+      rep(s, 2);
+      const msg = `You take down every word, seal it, and let ${name} go home to die in a bed. The clerks grumble; the town does not.`;
+      pushLog(s, msg, "good");
+      return { ok: true, message: msg, tone: "good" };
+    }
+    if (optionId === "sellIt") {
+      s.resources.coin += price;
+      s.stats.totalCoinEarned += price;
+      adjustMorality(s, -4);
+      const msg = `The magistrate pays ${price} coin for a solved case and a tidy file. ${name} coughs on in the cells.`;
+      pushLog(s, msg, "bad");
+      return { ok: true, message: msg, tone: "bad" };
+    }
+    // ignore
+    const msg = "You let the fever talk drift out the bars with the night air.";
+    pushLog(s, msg, "neutral");
+    return { ok: true, message: msg, tone: "neutral" };
+  },
+};
+
+const rivalWarden: StoryCard = {
+  kind: "rivalWarden",
+  eligible: (s) => s.day >= 8 && s.prisoners.some((p) => p.alive),
+  build: (s, rng) => {
+    void rng;
+    const prize = s.prisoners
+      .filter((p) => p.alive)
+      .sort((a, b) => b.dailyPayout - a.dailyPayout)[0];
+    const price = prize.dailyPayout * 8;
+    return {
+      kind: "rivalWarden",
+      day: s.day,
+      prompt: `The warden of a rival keep sends a silk-gloved envoy: they will pay ${price} coin, cash, for ${prize.name} — your most profitable charge — transferred quietly to their cells.`,
+      options: [
+        { id: "sell", label: `Sell for ${price} coin`, hint: "Coin today, income gone tomorrow. Looks mercenary." },
+        { id: "refuse", label: "Refuse publicly", hint: "Loyal to your charge — the crown likes a steady hand." },
+        { id: "counter", label: "Demand double", hint: "Greedy gamble: a fortune, or the envoy walks insulted." },
+      ],
+      context: { targetId: prize.id, targetName: prize.name, price },
+    };
+  },
+  resolve: (s, rng, optionId, d) => {
+    const target = s.prisoners.find((p) => p.id === d.context.targetId && p.alive);
+    const name = d.context.targetName as string;
+    const price = d.context.price as number;
+    if (!target) {
+      const msg = `The envoy finds ${name} no longer in your keeping, and withdraws the offer.`;
+      pushLog(s, msg, "neutral");
+      return { ok: true, message: msg, tone: "neutral" };
+    }
+    if (optionId === "sell") {
+      target.alive = false; // carted off to the rival's cells
+      s.resources.coin += price;
+      s.stats.totalCoinEarned += price;
+      rep(s, -2);
+      const msg = `${name} leaves in a barred coach and ${price} coin arrives by the same road. The magistrate hears you deal in charges like cattle.`;
+      pushLog(s, msg, "neutral");
+      return { ok: true, message: msg, tone: "neutral" };
+    }
+    if (optionId === "refuse") {
+      rep(s, 2);
+      const msg = "You refuse at the gate, loudly enough for the town to hear. A warden who cannot be bought keeps the crown's charges.";
+      pushLog(s, msg, "good");
+      return { ok: true, message: msg, tone: "good" };
+    }
+    // counter — demand double
+    if (rng.chance(0.3)) {
+      const doubled = price * 2;
+      target.alive = false;
+      s.resources.coin += doubled;
+      s.stats.totalCoinEarned += doubled;
+      const msg = `The envoy blinks, then pays: ${doubled} coin for ${name}. Somewhere, a rival warden is being shouted at.`;
+      pushLog(s, msg, "good");
+      return { ok: true, message: msg, tone: "good" };
+    }
+    rep(s, -1);
+    const msg = "The envoy snaps their ledger shut at your greed and departs. The deal — and a little goodwill — collapses.";
+    pushLog(s, msg, "neutral");
+    return { ok: true, message: msg, tone: "neutral" };
+  },
+};
+
 // ── Registry & entry points ──────────────────────────────────────────────────
 
 const DECK: StoryCard[] = [
@@ -515,6 +838,12 @@ const DECK: StoryCard[] = [
   starvingVillage,
   duel,
   informant,
+  witchTrial,
+  taxAssessor,
+  gravedigger,
+  harvestFestival,
+  condemnedConfession,
+  rivalWarden,
 ];
 
 export const STORY_KINDS: DecisionKind[] = DECK.map((c) => c.kind);

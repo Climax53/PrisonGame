@@ -66,7 +66,7 @@ describe("legend arcs play end to end", () => {
       for (const pickIndex of [0, 1, 2]) {
         const s = createInitialState(50);
         s.resources.food = 5000;
-        s.resources.firewood = 5000;
+        s.resources.firewood = 40; // hoarding past 50 guarantees daily fires
         s.resources.coin = 5000;
         const p = brandForced(s, legend.id);
         let beatsSeen = 0;
@@ -75,6 +75,7 @@ describe("legend arcs play end to end", () => {
           for (const q of s.prisoners) {
             if (q.alive) q.unrest = 0;
           }
+          s.resources.firewood = 40;
           s.pacing = "slow";
           advanceDay(s);
           if (s.pendingDecision) {

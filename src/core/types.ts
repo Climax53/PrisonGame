@@ -35,6 +35,19 @@ export const RARITY_ORDER: Rarity[] = [
   "mythic",
 ];
 
+/**
+ * A quirk of temperament or body an inmate may arrive with. Declared here (not
+ * in traits.ts) because types.ts imports nothing — the definitions table lives
+ * in traits.ts. Roughly half of inmates carry no trait at all.
+ */
+export type TraitId =
+  | "sickly"
+  | "brawler"
+  | "silverTongue"
+  | "escapeArtist"
+  | "penitent"
+  | "ironBack";
+
 /** Where a conscripted prisoner is assigned to labor. `none` = idle in cell. */
 export type LaborAssignment =
   | "none"
@@ -50,6 +63,8 @@ export interface Prisoner {
   severity: Severity;
   /** Notoriety tier — see Rarity. Affects payout, labour, unrest, escape. */
   rarity: Rarity;
+  /** Optional quirk (see traits.ts). Affects payout, unrest, health, labour, escape. */
+  trait?: TraitId;
   /** 0–100. At 0 the prisoner dies. */
   health: number;
   /** 0–100. High unrest fuels riots and escape attempts. */
@@ -123,6 +138,9 @@ export type EventKind =
   | "amnesty" // royal decree frees the petty criminals
   | "bard" // a famous bard sings of your keep — for better or worse
   | "ratPlague" // vermin in the stores
+  | "friar" // a wandering friar tends the sick — or preaches rebellion
+  | "audit" // the crown skims "administration" off a fat purse
+  | "shivFound" // a cell search turns up a blade
   // Story decisions (pause-and-choose), see storyDecisions.ts:
   | "plagueDoctor"
   | "ringleader"
@@ -132,6 +150,12 @@ export type EventKind =
   | "starvingVillage"
   | "duel"
   | "informant"
+  | "witchTrial"
+  | "taxAssessor"
+  | "gravedigger"
+  | "harvestFestival"
+  | "condemnedConfession"
+  | "rivalWarden"
   // Named-legend arc beats (legends.ts):
   | "legend";
 
@@ -171,6 +195,12 @@ export type DecisionKind =
   | "starvingVillage"
   | "duel"
   | "informant"
+  | "witchTrial"
+  | "taxAssessor"
+  | "gravedigger"
+  | "harvestFestival"
+  | "condemnedConfession"
+  | "rivalWarden"
   | "legend"; // a named inmate's story-arc beat (see legends.ts)
 
 /** The playable warden classes. `steward` is the always-unlocked default. */

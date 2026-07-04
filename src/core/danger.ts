@@ -14,6 +14,7 @@
 import { BALANCE } from "./balance";
 import { escapeMultiplier } from "./morality";
 import { averageUnrest, livingPrisoners } from "./state";
+import { traitDef } from "./traits";
 import { wardenMods } from "./wardens";
 import type { GameState } from "./types";
 
@@ -67,7 +68,13 @@ export function escapeChance(state: GameState): number {
     escapeMultiplier(state);
   if (state.buildings.walls) chance *= BALANCE.buildings.walls.escapeMult;
   if (state.buildings.gallows) chance *= BALANCE.buildings.gallows.escapeMult;
-  return Math.min(0.9, chance * dangerScale(state));
+  // Every Escape Artist in the cells adds a flat sliver of risk no wall
+  // discounts — the forecast stays honest about who you chose to hold.
+  const traitBonus = state.prisoners.reduce(
+    (sum, p) => sum + (p.alive ? traitDef(p.trait)?.escapeBonus ?? 0 : 0),
+    0,
+  );
+  return Math.min(0.9, chance * dangerScale(state) + traitBonus);
 }
 
 export interface DangerReport {

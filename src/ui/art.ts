@@ -160,4 +160,10 @@ export const DECISION_TITLE: Record<string, string> = {
   duel: "⚔  The Yard Duel",
   informant: "🕯  The Informant",
   legend: "★  A Legend Stirs",
+  witchTrial: "🔥  The Witch Trial",
+  taxAssessor: "🧾  The Tax Assessor",
+  gravedigger: "⚰  The Gravedigger's Offer",
+  harvestFestival: "🌾  The Harvest Festival",
+  condemnedConfession: "🕯  A Deathbed Confession",
+  rivalWarden: "🏰  The Rival Warden",
 };

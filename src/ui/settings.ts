@@ -8,6 +8,11 @@ export interface Settings {
   sound: boolean;
   /** True once the first-run tutorial has been completed or skipped. */
   hasOnboarded: boolean;
+  /** First Decrees learn-by-doing checklist progress (see ui/ftue.ts). */
+  ftue?: {
+    done: boolean;
+    steps: Partial<Record<string, boolean>>;
+  };
 }
 
 const KEY = "wardens_keep_settings_v1";

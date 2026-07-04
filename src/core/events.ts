@@ -310,5 +310,81 @@ export function resolveEvents(state: GameState, rng: Rng): EventResolution {
     });
   }
 
+  // ── Minor happenings: friar / audit / shiv search ──────────────────────────
+  // Chained else-if so at most ONE of these small-flavour events claims a
+  // night — the log breathes, and their combined odds stay modest. The roster
+  // is re-counted here: amnesty/escape above may have emptied the cells.
+  if (
+    livingPrisoners(state) > 0 &&
+    rng.chance(Math.min(1, E.friar.baseChance * opportunityScale(state)))
+  ) {
+    if (rng.chance(0.15)) {
+      // The friar's sermon takes an unfortunate turn toward the rights of man.
+      for (const p of state.prisoners) {
+        if (p.alive) p.unrest = Math.min(100, p.unrest + 6);
+      }
+      events.push({
+        kind: "friar",
+        day: state.day,
+        message: "A wandering friar preaches in the yard — of chains cast off and gates thrown wide. The cells mutter long after he leaves.",
+        deaths: 0,
+        reputationDelta: 0,
+        coinDelta: 0,
+      });
+    } else {
+      for (const p of state.prisoners) {
+        if (!p.alive) continue;
+        p.health = Math.min(100, p.health + 8);
+        p.unrest = Math.max(0, p.unrest - 4);
+      }
+      events.push({
+        kind: "friar",
+        day: state.day,
+        message: "A wandering friar tends the sick and hears confessions. The cells breathe easier tonight.",
+        deaths: 0,
+        reputationDelta: 0,
+        coinDelta: 0,
+      });
+    }
+  } else if (
+    state.resources.coin > 300 &&
+    rng.chance(Math.min(1, E.audit.baseChance * opportunityScale(state)))
+  ) {
+    // The crown skims "administration" off a fat purse — but clean books earn a
+    // small nod from the exchequer.
+    const skim = Math.round(state.resources.coin * 0.05);
+    state.resources.coin -= skim;
+    state.reputation += 1;
+    events.push({
+      kind: "audit",
+      day: state.day,
+      message: `The crown's clerks audit the ledgers and skim ${skim} coin as "administration." Your clean books are noted at court.`,
+      deaths: 0,
+      reputationDelta: 1,
+      coinDelta: -skim,
+    });
+  } else if (
+    livingPrisoners(state) > 0 &&
+    state.guards.length > 0 &&
+    rng.chance(Math.min(1, E.shivFound.baseChance * opportunityScale(state)))
+  ) {
+    // A cell search turns up a blade: the ringleader-to-be is deflated, the
+    // magistrate approves — but rough searches leave their own small stain.
+    const target = state.prisoners
+      .filter((p) => p.alive)
+      .sort((a, b) => b.unrest - a.unrest)[0];
+    target.unrest = Math.max(0, target.unrest - 12);
+    state.reputation += 0.5;
+    adjustMorality(state, -0.5);
+    events.push({
+      kind: "shivFound",
+      day: state.day,
+      message: `A dawn search of the cells turns up a sharpened spoon under ${target.name}'s pallet. Confiscated — none too gently.`,
+      deaths: 0,
+      reputationDelta: 0.5,
+      coinDelta: 0,
+    });
+  }
+
   return { events, decision };
 }

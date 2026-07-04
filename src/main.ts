@@ -23,8 +23,20 @@ const config: Phaser.Types.Core.GameConfig = {
   render: { antialias: true, roundPixels: true },
 };
 
-const game = new Phaser.Game(config);
+// Boot only after the bundled medieval fonts are ready, so no text object
+// ever renders in a fallback face and then "pops". A short timeout guards
+// against a stalled font load ever blocking the game.
+const fontsReady = Promise.race([
+  Promise.all([
+    document.fonts.load('28px "PirataOne"'),
+    document.fonts.load('20px "MedievalSharp"'),
+  ]),
+  new Promise((resolve) => setTimeout(resolve, 2500)),
+]);
 
-// Expose the running game for automated smoke-tests / debugging. Harmless in
-// production; lets the headless verifier introspect live scene state.
-(window as unknown as { __GAME__?: Phaser.Game }).__GAME__ = game;
+void fontsReady.then(() => {
+  const game = new Phaser.Game(config);
+  // Expose the running game for automated smoke-tests / debugging. Harmless in
+  // production; lets the headless verifier introspect live scene state.
+  (window as unknown as { __GAME__?: Phaser.Game }).__GAME__ = game;
+});

@@ -135,6 +135,32 @@ const art = await page.evaluate(() => {
   };
 });
 
+// ── World-class pass: fonts, dossier sheet, the Royal Mint, jail map.
+const worldClass = await page.evaluate(() => {
+  const fonts =
+    document.fonts.check('28px "PirataOne"') && document.fonts.check('20px "MedievalSharp"');
+  const sc = scene();
+  // Prisoner dossier opens and closes.
+  const p = sc.state.prisoners.find((q) => q.alive);
+  let dossier = true;
+  if (p) {
+    sc.openPrisonerSheet(p);
+    dossier = sc.children.list.some((c) => c.depth === 820 && c.length > 0);
+    sc.children.list.filter((c) => c.depth === 820).forEach((c) => c.destroy());
+  }
+  // The Royal Mint opens.
+  sc.openStore();
+  const store = sc.children.list.some((c) => c.depth === 880 && c.length > 0);
+  sc.children.list.filter((c) => c.depth === 880).forEach((c) => c.destroy());
+  // The jail map renders on the Cells tab (corridor + bars build objects).
+  sc.activeTab = "cells";
+  sc.renderAll();
+  const jailMap = sc.content.length > 10;
+  sc.activeTab = "keep";
+  sc.renderAll();
+  return { fonts, dossier, store, jailMap };
+});
+
 // Verify the new systems are live in the running game.
 const systems = await page.evaluate(() => {
   const s = scene().state;
@@ -324,6 +350,10 @@ assert(art.exteriors, "keep exterior art is loaded for tiers and times of day");
 assert(art.banners, "decision banner art is loaded");
 assert(art.endings, "ending art is loaded");
 assert(art.vfxAnims, "VFX animations are registered");
+assert(worldClass.fonts, "medieval display fonts are loaded");
+assert(worldClass.dossier, "the prisoner dossier sheet opens");
+assert(worldClass.store, "the Royal Mint (store) opens");
+assert(worldClass.jailMap, "the cell block renders as a jail map");
 assert(raisedRiot, "a forced riot raised a decision");
 assert(modalRendered, "the decision modal rendered");
 assert(resolvedClean, "resolving the decision cleared it");
